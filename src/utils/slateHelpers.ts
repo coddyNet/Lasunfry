@@ -142,16 +142,10 @@ export const formatMarkdown = (markdown: string, settings: FormattingSettings = 
   formatted = formatted.replace(/^-\s\[X\]/gmi, '- [x]');
 
   // 8. Capitalize first letter of each sentence
-  // After sentence-ending punctuation followed by whitespace
+  // After sentence-ending punctuation (. ! ?) followed by whitespace
   formatted = formatted.replace(/([.!?])\s+([a-z])/g, (_match, punct, letter) => `${punct} ${letter.toUpperCase()}`);
-  // At the start of each line (skip markdown markers like #, -, >, *, [)
-  formatted = formatted.replace(/^(?!\s*[#\-\>\*\[\d])(\s*)([a-z])/gm, (_match, space, letter) => `${space}${letter.toUpperCase()}`);
-  // After list markers: "- text" or "* text" or "> text"
-  formatted = formatted.replace(/^(\s*[-*+]\s)([a-z])/gm, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
-  formatted = formatted.replace(/^(\s*>\s)([a-z])/gm, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
-  formatted = formatted.replace(/^(\s*\d+\.\s)([a-z])/gm, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
-  // After task list markers: "- [ ] text" or "- [x] text"
-  formatted = formatted.replace(/^(\s*-\s\[[x\s]\]\s)([a-z])/gmi, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
+  // Capitalize first lowercase letter on every line (handles all prefixes: -, *, +, >, #, 1., - [ ], etc.)
+  formatted = formatted.replace(/^([^a-zA-Z]*)([a-z])/gm, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
 
   return formatted + '\n';
 }
