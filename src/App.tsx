@@ -58,6 +58,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { checkGrammarMatches, correctGrammarLT, LTMatch } from './services/languageToolService';
+import { rephraseWithGemini } from './services/geminiRephraseService';
 import {
   Editor,
   Transforms,
@@ -1207,8 +1208,11 @@ const NoteEditor = ({
     const markdown = serializeMarkdown(editor.children);
     const formatted = formatMarkdown(markdown, formattingSettings);
     
-    // Re-phrase: apply grammar/spelling corrections via LanguageTool
-    const rephrased = await correctGrammarLT(formatted);
+    // Re-phrase: apply grammar/spelling corrections via LanguageTool first for local fixes
+    const corrected = await correctGrammarLT(formatted);
+    
+    // AI Rephrase: use Gemini for professional restructuring (the user's request)
+    const rephrased = await rephraseWithGemini(corrected);
     
     const newNodes = deserializeMarkdown(rephrased);
 
