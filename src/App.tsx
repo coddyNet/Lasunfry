@@ -57,7 +57,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { checkGrammarMatches, LTMatch } from './services/languageToolService';
+import { checkGrammarMatches, correctGrammarLT, LTMatch } from './services/languageToolService';
 import {
   Editor,
   Transforms,
@@ -1203,10 +1203,14 @@ const NoteEditor = ({
     setActiveGrammarMatch(null);
   }
 
-  const handleFormat = () => {
+  const handleFormat = async () => {
     const markdown = serializeMarkdown(editor.children);
     const formatted = formatMarkdown(markdown, formattingSettings);
-    const newNodes = deserializeMarkdown(formatted);
+    
+    // Re-phrase: apply grammar/spelling corrections via LanguageTool
+    const rephrased = await correctGrammarLT(formatted);
+    
+    const newNodes = deserializeMarkdown(rephrased);
 
     // Replace all nodes
     Transforms.delete(editor, {
@@ -1216,7 +1220,13 @@ const NoteEditor = ({
       },
     });
     Transforms.insertNodes(editor, newNodes);
-    showToast("File Formatted!", "success");
+    
+    // Clear grammar underlines since we just fixed everything
+    grammarMatches.forEach(m => m.rangeRef.unref());
+    setGrammarMatches([]);
+    setActiveGrammarMatch(null);
+    
+    showToast("Formatted & Rephrased!", "success");
   }
 
   // ── Core grammar scanning function (reusable) ──
