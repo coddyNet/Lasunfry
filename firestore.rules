@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: notes
+    // Document ID: {noteId}
+    // Fields:
+    //   - id: string (required) - Unique identifier
+    //   - userId: string (required) - Owner UID
+    //   - name: string (required) - Filename (max 255 chars)
+    //   - content: string (required) - Note content (max 1MB)
+    //   - type: string (required) - 'txt' or 'md'
+    //   - lastSaved: number (required) - Timestamp
+    //   - createdAt: number (required) - Timestamp (immutable)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+    
+    function isValidNote(data) {
+      return data.keys().hasAll(['id', 'userId', 'name', 'content', 'type', 'lastSaved', 'createdAt']) &&
+             data.keys().hasOnly(['id', 'userId', 'name', 'content', 'type', 'lastSaved', 'createdAt']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 255 &&
+             data.content is string && data.content.size() <= 1048576 && // 1MB limit
+             data.type in ['txt', 'md'] &&
+             data.lastSaved is number &&
+             data.createdAt is number;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "sanketkalathiya201@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /notes/{noteId} {
+      // Users can only list their own notes
+      allow read: if isDocOwner() || isAdmin();
+      
+      // Users can only create notes for themselves
+      allow create: if isAuthenticated() && 
+                      isValidNote(request.resource.data) && 
+                      request.resource.data.userId == request.auth.uid;
+      
+      // Users can only update their own notes, and createdAt must be immutable
+      allow update: if isDocOwner() && 
+                      isValidNote(request.resource.data) &&
+                      request.resource.data.userId == resource.data.userId &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+      
+      // Users can only delete their own notes
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId) && request.resource.data.role == 'user';
+      allow update: if isAuthenticated() && isOwner(userId) && request.resource.data.role == resource.data.role;
+    }
+  }
+}

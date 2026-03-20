@@ -1,0 +1,25 @@
+{
+  "entities": {
+    "Note": {
+      "title": "Note",
+      "description": "A markdown or text note created by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the note." },
+        "userId": { "type": "string", "description": "The UID of the user who owns the note." },
+        "name": { "type": "string", "description": "The filename of the note." },
+        "content": { "type": "string", "description": "The markdown or text content of the note." },
+        "type": { "type": "string", "enum": ["txt", "md"], "description": "The file type." },
+        "lastSaved": { "type": "number", "description": "Timestamp of the last save." },
+        "createdAt": { "type": "number", "description": "Timestamp of creation." }
+      },
+      "required": ["id", "userId", "name", "content", "type", "lastSaved", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/notes/{noteId}": {
+      "schema": "Note",
+      "description": "Collection of user notes."
+    }
+  }
+}
