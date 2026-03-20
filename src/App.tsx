@@ -1289,16 +1289,11 @@ const NoteEditor = ({
             <button 
               onClick={handleGrammarFix}
               disabled={isCorrecting}
-              className={`flex items-center gap-1.5 rounded-lg px-2 md:px-4 py-1.5 text-[10px] md:text-xs font-bold uppercase tracking-widest text-white transition-all overflow-hidden relative group shadow-sm ${
-                isCorrecting 
-                  ? 'bg-gradient-to-r from-slate-400 to-slate-500 cursor-not-allowed opacity-80' 
-                  : 'bg-gradient-to-r from-indigo-500 hover:from-indigo-600 to-purple-500 hover:to-purple-600 shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5'
-              }`}
+              className="flex items-center gap-1.5 rounded-lg bg-google-blue/10 px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider text-google-blue hover:bg-google-blue/20 transition-all disabled:opacity-50"
               title="Fix Grammar"
             >
-              <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 ease-in-out"></div>
-              {isCorrecting ? <Loader2 size={14} className="animate-spin relative z-10" /> : <Sparkles size={14} className="relative z-10" />}
-              <span className="hidden sm:inline relative z-10">Fix Grammar</span>
+              {isCorrecting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              <span className="hidden sm:inline">Fix Grammar</span>
             </button>
           </div>
         </div>
