@@ -13,6 +13,8 @@ import {
   Underline, 
   Strikethrough, 
   List, 
+  ListOrdered,
+  ListTodo,
   CheckSquare, 
   Sparkles, 
   Save,
@@ -1201,11 +1203,11 @@ const NoteEditor = ({
             <MarkButton format="underline" icon={<Underline size={16} />} title="Underline (Ctrl+U)" />
             <div className="mx-1 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
             {/* Removed H1 and H2 as per user request */}
-            <BlockButton format="check-list-item" icon={<CheckSquare size={16} />} title="Check List" />
+            <BlockButton format="check-list-item" icon={<ListTodo size={16} />} title="Check List" />
             <BlockButton format="block-quote" icon={<Quote size={16} />} title="Blockquote" />
             <div className="mx-1 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
             <BlockButton format="bulleted-list" icon={<List size={16} />} title="Bulleted List" />
-            <BlockButton format="numbered-list" icon={<List size={16} className="rotate-180" />} title="Numbered List" />
+            <BlockButton format="numbered-list" icon={<ListOrdered size={16} />} title="Numbered List" />
           </div>
           
           <div className="flex items-center gap-1">
