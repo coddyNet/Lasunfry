@@ -56,7 +56,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { correctGrammar } from './services/geminiService';
+import { correctGrammarLT } from './services/languageToolService';
 import { 
   Editor, 
   Transforms, 
@@ -482,7 +482,7 @@ export function App() {
         ? activeFile.content 
         : serializeMarkdown(activeFile.content);
         
-      const corrected = await correctGrammar(contentStr);
+      const corrected = await correctGrammarLT(contentStr);
       
       if (typeof activeFile.content === 'string') {
         handleContentChange(corrected);
