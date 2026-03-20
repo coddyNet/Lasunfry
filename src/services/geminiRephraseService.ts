@@ -39,7 +39,7 @@ export async function rephraseWithGemini(text: string): Promise<string> {
 
   try {
     const ai = getGenAI();
-    const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = ai.getGenerativeModel({ model: 'gemini-flash-latest' });
 
     const result = await model.generateContent(REPHRASE_PROMPT + text);
     const response = result.response;

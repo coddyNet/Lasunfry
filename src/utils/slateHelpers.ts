@@ -237,6 +237,7 @@ const serializeLeaf = (leaf: any): string => {
   let text = leaf.text;
   if (leaf.bold) text = `**${text}**`;
   if (leaf.italic) text = `*${text}*`;
+  if (leaf.strikethrough) text = `~~${text}~~`;
   if (leaf.code) text = `\`${text}\``;
   return text;
 }

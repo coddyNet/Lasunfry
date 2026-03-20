@@ -15,6 +15,7 @@ export type CustomText = {
   italic?: boolean
   code?: boolean
   underline?: boolean
+  strikethrough?: boolean
 }
 
 declare module 'slate' {

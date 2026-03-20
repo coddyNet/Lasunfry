@@ -1206,38 +1206,43 @@ const NoteEditor = ({
 
   const [isRephrasing, setIsRephrasing] = useState(false);
 
+  const [isHoveredGrammar, setIsHoveredGrammar] = useState(false);
+
   const handleAIRephrase = async () => {
     if (editor.children.length === 0 || isRephrasing) return;
     
     setIsRephrasing(true);
-    showToast("AI is rephrasing your text...", "info");
+    showToast("Gemini is refining your text...", "info");
 
     try {
-      const markdown = serializeMarkdown(editor.children);
-      // Clean with local formatter first
-      const formatted = formatMarkdown(markdown, formattingSettings);
-      // Rephrase with Gemini
-      const rephrased = await rephraseWithGemini(formatted);
+      // 1. Internal Formatting First
+      const rawMarkdown = serializeMarkdown(editor.children);
+      const formattedMarkdown = formatMarkdown(rawMarkdown, formattingSettings);
+      
+      // 2. AI Rephrase with Gemini
+      const rephrased = await rephraseWithGemini(formattedMarkdown);
       const newNodes = deserializeMarkdown(rephrased);
 
-      // Replace all nodes
+      if (rephrased.trim() === formattedMarkdown.trim()) {
+        showToast("Gemini returned original text. No changes needed.", "info");
+        return;
+      }
+
+      // 3. Apply changes
       Transforms.delete(editor, {
-        at: {
-          anchor: Editor.start(editor, []),
-          focus: Editor.end(editor, []),
-        },
+        at: { anchor: Editor.start(editor, []), focus: Editor.end(editor, []) },
       });
       Transforms.insertNodes(editor, newNodes);
       
-      // Clear grammar underlines
+      // Clear grammar marks since text has changed completely
       grammarMatches.forEach(m => m.rangeRef.unref());
       setGrammarMatches([]);
       setActiveGrammarMatch(null);
       
-      showToast("Text improved by AI!", "success");
+      showToast("Text perfected by Gemini!", "success");
     } catch (error) {
-       console.error("AI Rephrase failed:", error);
-       showToast("AI Rephrase failed. Try again later.", "error");
+       console.error("Gemini AI failed:", error);
+       showToast("Gemini is currently unavailable. Try again in a moment.", "error");
     } finally {
       setIsRephrasing(false);
     }
@@ -1378,6 +1383,36 @@ const NoteEditor = ({
   }, [activeFileId]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
+    const { selection } = editor
+    
+    // Handle Backspace on empty list-item/block or at the start of one
+    if (event.key === 'Backspace' && selection && Range.isCollapsed(selection)) {
+      const entry = Editor.above(editor, {
+        match: n => !Editor.isEditor(n) && SlateElement.isElement(n) && Editor.isBlock(editor, n)
+      })
+
+      if (entry) {
+        const [node, path] = entry
+        const isAtStart = Editor.isStart(editor, selection.anchor, path)
+        
+        if (isAtStart) {
+          const type = (node as any).type
+          if (type === 'list-item') {
+            const parent = Editor.parent(editor, path)
+            if (parent && SlateElement.isElement(parent[0]) && LIST_TYPES.includes((parent[0] as any).type)) {
+              event.preventDefault()
+              toggleBlock(editor, (parent[0] as any).type)
+              return
+            }
+          } else if (type === 'check-list-item') {
+            event.preventDefault()
+            toggleBlock(editor, type)
+            return
+          }
+        }
+      }
+    }
+
     for (const hotkey in HOTKEYS) {
       if (isHotkey(hotkey, event as any)) {
         event.preventDefault()
@@ -1411,120 +1446,63 @@ const NoteEditor = ({
             <MarkButton format="bold" icon={<Bold size={16} />} title="Bold (Ctrl+B)" />
             <MarkButton format="italic" icon={<Italic size={16} />} title="Italic (Ctrl+I)" />
             <MarkButton format="underline" icon={<Underline size={16} />} title="Underline (Ctrl+U)" />
+            <MarkButton format="strikethrough" icon={<Strikethrough size={16} />} title="Strikethrough (Ctrl+Shift+X)" />
             <div className="mx-1 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
             {/* Removed H1 and H2 as per user request */}
-            <BlockButton format="check-list-item" icon={<ListTodo size={16} />} title="Check List" />
-            <BlockButton format="block-quote" icon={<Quote size={16} />} title="Blockquote" />
-            <div className="mx-1 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
             <BlockButton format="bulleted-list" icon={<List size={16} />} title="Bulleted List" />
             <BlockButton format="numbered-list" icon={<ListOrdered size={16} />} title="Numbered List" />
-          </div>
-
-          <div className="flex items-center gap-1">
-            <div className="relative">
-              <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={handleFormat}
-                  className="flex items-center gap-1.5 px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700 transition-all border-r border-slate-200 dark:border-slate-700"
-                  title="Format Document"
-                >
-                  <WrapText size={14} />
-                  <span className="hidden sm:inline">Format</span>
-                </button>
-                <button
-                  onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                  className={`flex items-center justify-center px-2 py-1 transition-all ${isSettingsOpen ? 'bg-google-blue text-white' : 'text-slate-400 hover:text-google-blue hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                  title="Formatting Settings"
-                >
-                  <Settings2 size={14} />
-                </button>
+            <BlockButton format="check-list-item" icon={<ListTodo size={16} />} title="Check List" />
+            
+            <div className="mx-1 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
+            
+            {/* AI Tools Group */}
+            <div className="flex items-center gap-[6px] ml-1">
+              {/* Fix Grammar (First) */}
+              <div 
+                className="group relative z-[60]"
+                onMouseEnter={() => setIsHoveredGrammar(true)}
+                onMouseLeave={() => setIsHoveredGrammar(false)}
+              >
+                <ToolbarButton 
+                  active={false} // Disable default blue active styling
+                  icon={isCorrecting ? <Loader2 size={18} strokeWidth={2.5} className="animate-spin text-[#FF3B30]" /> : <Wand2 size={18} strokeWidth={2.5} className={grammarMatches.length > 0 ? 'text-[#FF3B30]' : 'text-slate-500 dark:text-slate-400 group-hover:text-[#FF3B30] transition-colors duration-200'} />} 
+                  title={grammarMatches.length === 0 ? "Fix Grammar" : ""} 
+                  onClick={handleFixAllGrammar} 
+                  className={`!rounded-[10px] !h-[34px] !w-[34px] bg-transparent group-hover:bg-red-50 dark:group-hover:bg-red-500/10 ${grammarMatches.length > 0 ? 'bg-red-50/80 dark:bg-red-500/10 ring-[1px] ring-[#FF3B30]/30 shadow-sm' : ''}`}
+                />
+                <AnimatePresence>
+                  {isHoveredGrammar && grammarMatches.length > 0 && (
+                    <motion.div 
+                      key="grammar-tooltip"
+                      initial={{ opacity: 0, y: 3, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 3, scale: 0.95 }}
+                      transition={{ duration: 0.15, ease: "easeOut" }}
+                      className="absolute top-full left-1/2 -translate-x-1/2 mt-[10px] px-3.5 py-[6px] bg-[#FF3B30] text-white text-[12px] font-bold tracking-wide rounded-[8px] shadow-[0_4px_16px_rgba(255,59,48,0.25)] whitespace-nowrap pointer-events-none"
+                    >
+                      Fix {grammarMatches.length} grammar issue{grammarMatches.length > 1 ? 's' : ''}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-transparent border-b-[#FF3B30]" />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
-              {/* Formatting Settings Dropdown */}
-              <AnimatePresence>
-                {isSettingsOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setIsSettingsOpen(false)}
-                    />
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 top-full mt-2 z-20 w-64 rounded-xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900 backdrop-blur-xl bg-white/90 dark:bg-slate-900/90"
-                    >
-                      <h4 className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Formatting Rules</h4>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400">List Marker</label>
-                          <select
-                            value={formattingSettings.listMarker}
-                            onChange={(e) => onSettingsChange({...formattingSettings, listMarker: e.target.value as any})}
-                            className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                          >
-                            <option value="-">Dash (-)</option>
-                            <option value="*">Asterisk (*)</option>
-                            <option value="+">Plus (+)</option>
-                          </select>
-                        </div>
-
-                        {[
-                          { id: 'collapseEmptyLines', label: 'Collapse Lines' },
-                          { id: 'spaceAfterHeading', label: 'Space after #' },
-                          { id: 'trimTrailingWhitespace', label: 'Trim Whitespace' }
-                        ].map((item) => (
-                          <div key={item.id} className="flex items-center justify-between">
-                            <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400">{item.label}</label>
-                            <button
-                              onClick={() => onSettingsChange({ ...formattingSettings, [item.id]: ! (formattingSettings as any)[item.id] })}
-                              className={`flex h-4 w-8 items-center rounded-full transition-colors ${
-                                (formattingSettings as any)[item.id] ? 'bg-google-blue' : 'bg-slate-300 dark:bg-slate-700'
-                              }`}
-                            >
-                              <div className={`h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${
-                                (formattingSettings as any)[item.id] ? 'translate-x-4.5' : 'translate-x-1'
-                              }`} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
+              {/* Gemini Rephrase (Second) */}
+              <div className="group relative z-[60]">
+                <ToolbarButton 
+                  active={false}
+                  icon={<Sparkles size={18} strokeWidth={2.5} className={isRephrasing ? 'animate-spin text-[#A855F7]' : 'animate-gemini text-[#A855F7]'} />} 
+                  title="Refine with Gemini" 
+                  onClick={handleAIRephrase} 
+                  className={`!rounded-[10px] !h-[34px] !w-[34px] bg-transparent group-hover:bg-purple-50 dark:group-hover:bg-purple-500/10 ${isRephrasing ? 'bg-purple-50 dark:bg-purple-500/10 ring-[1px] ring-[#A855F7]/30 shadow-sm' : ''}`}
+                />
+              </div>
             </div>
+          </div>
 
-              {/* Rephrase AI Button */}
-              <button
-                onClick={handleAIRephrase}
-                disabled={isRephrasing}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] md:text-xs font-bold uppercase tracking-wider rounded-lg border-2 transition-all shadow-sm ${
-                  isRephrasing 
-                    ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed dark:border-slate-800 dark:bg-slate-900' 
-                    : 'border-indigo-400 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white dark:border-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-600 dark:hover:text-white active:scale-95'
-                }`}
-                title="Rephrase with Gemini AI"
-              >
-                <Sparkles size={14} className={isRephrasing ? 'animate-spin' : 'animate-pulse text-indigo-500'} />
-                <span>{isRephrasing ? 'Thinking...' : 'Rephrase'}</span>
-              </button>
 
-              <button
-                onClick={handleFixAllGrammar}
-              disabled={isCorrecting}
-              className={`flex items-center gap-1.5 rounded-lg px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 ${
-                grammarMatches.length > 0
-                  ? 'bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40'
-                  : 'bg-google-blue/10 text-google-blue hover:bg-google-blue/20'
-              }`}
-              title={grammarMatches.length > 0 ? 'Fix All Grammar Issues' : 'Check Grammar'}
-            >
-              {isCorrecting ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
-              <span className="hidden sm:inline">
-                {grammarMatches.length > 0 ? `Fix ${grammarMatches.length} Issues` : 'Fix Grammar'}
-              </span>
-            </button>
+          <div className="flex items-center gap-1">
+            {/* Right side now empty or reserved for other actions */}
           </div>
         </div>
 
@@ -1589,6 +1567,7 @@ const HOTKEYS: Record<string, string> = {
   'mod+i': 'italic',
   'mod+u': 'underline',
   'mod+`': 'code',
+  'mod+shift+x': 'strikethrough',
 }
 
 const toggleBlock = (editor: Editor, format: string) => {
@@ -1740,6 +1719,9 @@ const Leaf = ({ attributes, children, leaf }: any) => {
   if (leaf.underline) {
     content = <u>{content}</u>
   }
+  if (leaf.strikethrough) {
+    content = <s className="text-slate-500">{content}</s>
+  }
 
   if (leaf.grammarError) {
     content = (
@@ -1774,20 +1756,41 @@ function BrandIcon({ size = 24, className = "" }: { size?: number; className?: s
   );
 }
 
-function ToolbarButton({ icon, title, onClick, active, onPointerDown }: { icon: React.ReactNode; title: string; onClick?: () => void; active?: boolean; onPointerDown?: (e: any) => void }) {
+function ToolbarButton({ icon, title, onClick, active, onPointerDown, className = "" }: { icon: React.ReactNode; title: string; onClick?: () => void; active?: boolean; onPointerDown?: (e: any) => void; className?: string }) {
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
-    <button 
-      onClick={onClick}
-      onPointerDown={onPointerDown}
-      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200 ${
-        active 
-          ? 'bg-google-blue text-white shadow-sm' 
-          : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-      }`} 
-      title={title}
-    >
-      {icon}
-    </button>
+    <div className="relative flex items-center justify-center">
+      <button 
+        onClick={onClick}
+        onPointerDown={onPointerDown}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className={`flex h-[34px] w-[34px] items-center justify-center rounded-[10px] transition-all duration-200 ${
+          active 
+            ? 'bg-[#4285F4] text-white shadow-sm' 
+            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+        } ${className}`} 
+      >
+        {icon}
+      </button>
+      
+      <AnimatePresence>
+        {isHovered && title && (
+          <motion.div
+            key="tooltip"
+            initial={{ opacity: 0, y: 3, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 3, scale: 0.95 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="absolute top-full left-1/2 -translate-x-1/2 mt-[9px] z-[60] px-3.5 py-1.5 bg-[#1C1C1E] dark:bg-[#F2F2F7] text-[#F2F2F7] dark:text-[#1C1C1E] text-[12px] font-medium tracking-[0.01em] rounded-[8px] shadow-[0_4px_16px_rgba(0,0,0,0.12)] whitespace-nowrap pointer-events-none"
+          >
+            {title}
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-transparent border-b-[#1C1C1E] dark:border-b-[#F2F2F7]" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
