@@ -189,7 +189,6 @@ export function App() {
   });
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isSplitView, setIsSplitView] = useState(false);
-  const [isCorrecting, setIsCorrecting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedStatus, setLastSavedStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -471,29 +470,6 @@ export function App() {
       } catch (error) {
         showToast("Failed to save settings", "error");
       }
-    }
-  };
-
-  const handleGrammarFix = async () => {
-    if (!activeFile || isCorrecting) return;
-    setIsCorrecting(true);
-    try {
-      const contentStr = typeof activeFile.content === 'string' 
-        ? activeFile.content 
-        : serializeMarkdown(activeFile.content);
-        
-      const corrected = await correctGrammarLT(contentStr);
-      
-      if (typeof activeFile.content === 'string') {
-        handleContentChange(corrected);
-      } else {
-        handleContentChange(deserializeMarkdown(corrected));
-      }
-      showToast("Grammar corrected!", "success");
-    } catch (error) {
-      showToast("Grammar check failed.", "error");
-    } finally {
-      setIsCorrecting(false);
     }
   };
 
@@ -1029,14 +1005,16 @@ export function App() {
                 <p className="text-sm text-slate-400">Select a file from the sidebar or create a new one.</p>
               </div>
             ) : (
-              <div className="flex h-full w-full">
-                <NoteEditor 
-                  initialContent={(activeFile.content as any)} 
-                  onChange={handleContentChange}
+              <div className="flex h-full w-full">                <NoteEditor 
+                  key={activeFile.id}
+                  initialContent={activeFile.content}
+                  onChange={(newContent) => {
+                    setFiles(prev => prev.map(f => 
+                      f.id === activeFile.id ? { ...f, content: newContent } : f
+                    ));
+                  }}
                   fontSize={editorFontSize}
-                  activeFileId={activeFileId}
-                  handleGrammarFix={handleGrammarFix}
-                  isCorrecting={isCorrecting}
+                  activeFileId={activeFile.id}
                   showToast={showToast}
                   formattingSettings={formattingSettings}
                   onSettingsChange={updateFormattingSettings}
@@ -1125,8 +1103,6 @@ const NoteEditor = ({
   onChange, 
   fontSize, 
   activeFileId,
-  handleGrammarFix,
-  isCorrecting,
   showToast,
   formattingSettings,
   onSettingsChange
@@ -1135,8 +1111,6 @@ const NoteEditor = ({
   onChange: (val: Descendant[]) => void;
   fontSize: number; 
   activeFileId: string;
-  handleGrammarFix: () => void;
-  isCorrecting: boolean;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   formattingSettings: FormattingSettings;
   onSettingsChange: (settings: FormattingSettings) => void;
@@ -1145,6 +1119,7 @@ const NoteEditor = ({
   const renderLeaf = React.useCallback((props: RenderLeafProps) => <Leaf {...props} />, [])
   const editor = useMemo(() => withHistory(withReact(createEditor())), [])
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCorrecting, setIsCorrecting] = useState(false);
 
   const handleFormat = () => {
     const markdown = serializeMarkdown(editor.children);
@@ -1161,6 +1136,32 @@ const NoteEditor = ({
     Transforms.insertNodes(editor, newNodes);
     showToast("File Formatted!", "success");
   }
+
+  const handleGrammarFix = async () => {
+    if (editor.children.length === 0 || isCorrecting) return;
+    setIsCorrecting(true);
+    try {
+      const markdown = serializeMarkdown(editor.children);
+      const corrected = await correctGrammarLT(markdown);
+      
+      const newNodes = deserializeMarkdown(corrected);
+      
+      // Replace all nodes
+      Transforms.delete(editor, {
+        at: {
+          anchor: Editor.start(editor, []),
+          focus: Editor.end(editor, []),
+        },
+      });
+      Transforms.insertNodes(editor, newNodes);
+      
+      showToast("Grammar check complete!", "success");
+    } catch (error) {
+      showToast("Failed to check grammar.", "error");
+    } finally {
+      setIsCorrecting(false);
+    }
+  };
 
   const [value, setValue] = useState<Descendant[]>(() => 
     typeof initialContent === 'string' ? (initialContent ? deserializeMarkdown(initialContent) : getInitialSlateValue()) : (initialContent || getInitialSlateValue())
@@ -1288,11 +1289,16 @@ const NoteEditor = ({
             <button 
               onClick={handleGrammarFix}
               disabled={isCorrecting}
-              className="flex items-center gap-1.5 rounded-lg bg-google-blue/10 px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider text-google-blue hover:bg-google-blue/20 transition-all disabled:opacity-50"
-              title="Correct Grammar"
+              className={`flex items-center gap-1.5 rounded-lg px-2 md:px-4 py-1.5 text-[10px] md:text-xs font-bold uppercase tracking-widest text-white transition-all overflow-hidden relative group shadow-sm ${
+                isCorrecting 
+                  ? 'bg-gradient-to-r from-slate-400 to-slate-500 cursor-not-allowed opacity-80' 
+                  : 'bg-gradient-to-r from-indigo-500 hover:from-indigo-600 to-purple-500 hover:to-purple-600 shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5'
+              }`}
+              title="Fix Grammar"
             >
-              {isCorrecting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-              <span className="hidden sm:inline">Grammar</span>
+              <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 ease-in-out"></div>
+              {isCorrecting ? <Loader2 size={14} className="animate-spin relative z-10" /> : <Sparkles size={14} className="relative z-10" />}
+              <span className="hidden sm:inline relative z-10">Fix Grammar</span>
             </button>
           </div>
         </div>
