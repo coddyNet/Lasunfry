@@ -1353,8 +1353,8 @@ const NoteEditor = ({
         editor={editor}
         initialValue={value}
         onChange={val => {
-          // Auto grammar check: debounce 2s after typing stops
-          if (editor.operations.some(op => op.type === 'insert_text' || op.type === 'remove_text')) {
+          // Auto grammar check: debounce 2s after typing/pasting stops
+          if (editor.operations.some(op => 'text' in op || op.type === 'insert_node' || op.type === 'split_node' || op.type === 'merge_node' || op.type === 'remove_node')) {
             if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
             setActiveGrammarMatch(null);
             checkTimerRef.current = setTimeout(() => {
@@ -1690,8 +1690,7 @@ const Leaf = ({ attributes, children, leaf }: any) => {
     content = (
       <span
         className="bg-pink-100/50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 border-b-2 border-pink-400 dark:border-pink-500 cursor-pointer transition-colors hover:bg-pink-200/50 dark:hover:bg-pink-800/50"
-        onClick={(e) => {
-           e.preventDefault();
+        onMouseEnter={(e) => {
            e.stopPropagation();
            const event = new CustomEvent('openGrammarMatch', {
              detail: { match: leaf.matchData, rect: e.currentTarget.getBoundingClientRect() }
