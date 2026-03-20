@@ -208,10 +208,11 @@ export function App() {
   const [replaceText, setReplaceText] = useState('');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [editorFontSize, setEditorFontSize] = useState(14);
-  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [editingFileId, setEditingFileId] = useState<{ id: string; location: 'sidebar' | 'tab' } | null>(null);
   const [editingFileName, setEditingFileName] = useState('');
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'info' }[]>([]);
   const [formattingSettings, setFormattingSettings] = useState<FormattingSettings>(DEFAULT_FORMATTING_SETTINGS);
+  const [contextMenu, setContextMenu] = useState<{ fileId: string; x: number; y: number } | null>(null);
   const isRenamingRef = useRef(false);
   const editorRef = useRef<any>(null); // Slate editor reference
 
@@ -223,10 +224,26 @@ export function App() {
     }, 4000);
   };
 
-  const startRenaming = (file: File, e: React.MouseEvent) => {
+  // Close context menu on outside click or scroll
+  useEffect(() => {
+    const close = () => setContextMenu(null);
+    if (contextMenu) {
+      window.addEventListener('click', close);
+      window.addEventListener('contextmenu', close);
+      window.addEventListener('scroll', close, true);
+      window.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    }
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('contextmenu', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [contextMenu]);
+
+  const startRenaming = (file: File, e: React.MouseEvent, location: 'sidebar' | 'tab') => {
     e.stopPropagation();
     isRenamingRef.current = true;
-    setEditingFileId(file.id);
+    setEditingFileId({ id: file.id, location });
     setEditingFileName(file.name);
   };
 
@@ -238,12 +255,12 @@ export function App() {
     }
 
     try {
-      await setDoc(doc(db, 'notes', editingFileId), {
+      await setDoc(doc(db, 'notes', editingFileId.id), {
         name: editingFileName,
         lastSaved: Date.now()
       }, { merge: true });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `notes/${editingFileId}`);
+      handleFirestoreError(error, OperationType.UPDATE, `notes/${editingFileId.id}`);
     } finally {
       setEditingFileId(null);
       isRenamingRef.current = false;
@@ -349,7 +366,7 @@ export function App() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetchedFiles = snapshot.docs
         .map(doc => doc.data() as File)
-        .sort((a, b) => b.lastSaved - a.lastSaved);
+        .sort((a, b) => b.createdAt - a.createdAt);
 
       setFiles(prev => {
         // Only update if data actually changed to prevent cursor resets
@@ -623,10 +640,7 @@ export function App() {
         e.preventDefault();
         setIsSplitView(prev => !prev);
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
-        e.preventDefault();
-        setIsSidebarOpen(prev => !prev);
-      }
+      // Ctrl+B sidebar toggle removed intentionally
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -744,9 +758,10 @@ export function App() {
         <div className="flex items-center gap-2 md:gap-6">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200"
+            title={isSidebarOpen ? 'Collapse Sidebar' : 'Expand Sidebar'}
           >
-            <Menu size={18} />
+            {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
           </button>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setActiveFileId('')}>
@@ -797,13 +812,20 @@ export function App() {
           />
         )}
 
-        {/* Sidebar */}
-        {isSidebarOpen && (
-          <aside
-            className="fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-100 bg-white/80 backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-950/80 lg:relative lg:inset-auto lg:z-0 lg:bg-white/40 overflow-hidden shadow-2xl lg:shadow-none"
-            style={{ width: !isMobile ? sidebarWidth : '85%', maxWidth: '320px' }}
-          >
-            <div className="flex w-70 flex-col p-4">
+        {/* Sidebar — always mounted, width animates for smooth collapse/expand */}
+        <aside
+          className="flex flex-col border-r border-slate-100 bg-white/80 backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-950/80 lg:bg-white/40 overflow-hidden shadow-2xl lg:shadow-none"
+          style={{
+            width: isSidebarOpen ? (isMobile ? '85%' : '280px') : (isMobile ? '0px' : '0px'),
+            minWidth: isSidebarOpen ? undefined : '0px',
+            transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            position: isMobile ? 'fixed' : 'relative',
+            ...(isMobile ? { inset: '0 auto 0 0', zIndex: 40 } : {})
+          }}
+        >
+          {/* Inner wrapper — fixed width so content doesn't squish during animation */}
+          <div style={{ width: isMobile ? '85vw' : '280px', maxWidth: '320px' }} className="flex flex-col h-full">
+            <div className="flex flex-col p-4 h-full">
               <div className="flex flex-col gap-6">
                 <div className="relative w-full px-2 mt-2">
                   <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -817,70 +839,75 @@ export function App() {
                 </div>
                 <div className="flex items-center justify-between px-2 pt-2">
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Workspace</p>
-                  <button
-                    onClick={handleCreateFile}
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-google-blue shadow-sm hover:shadow-md hover:bg-slate-50 transition-all duration-200 dark:bg-slate-800 dark:hover:bg-slate-700"
-                    title="New File"
-                  >
-                    <Plus size={16} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={handleCreateFile}
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-google-blue shadow-sm hover:shadow-md hover:bg-slate-50 transition-all duration-200 dark:bg-slate-800 dark:hover:bg-slate-700"
+                      title="New File"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
                 </div>
                 <nav className="space-y-1 overflow-y-auto max-h-[calc(100vh-250px)]">
                   {filteredFiles.map(file => (
-                    <div key={file.id} className="group relative">
-                      <button
-                        onClick={() => openFile(file.id)}
-                        onDoubleClick={(e) => startRenaming(file, e)}
-                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-                          activeFileId === file.id
-                            ? 'bg-google-blue text-white shadow-md shadow-google-blue/20'
-                            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <FileText size={18} />
-                        {editingFileId === file.id ? (
+                    <div
+                      key={file.id}
+                      className="group relative"
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenu({ fileId: file.id, x: e.clientX, y: e.clientY });
+                      }}
+                    >
+                      {editingFileId?.id === file.id && editingFileId.location === 'sidebar' ? (
+                        /* Edit mode: plain div so the input keeps focus uninterrupted */
+                        <div className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium bg-google-blue text-white shadow-md shadow-google-blue/20">
+                          <FileText size={18} />
                           <input
                             autoFocus
-                            className="flex-1 bg-transparent outline-none border-b border-white/50 text-white"
-                            value={editingFileName}
+                            className="flex-1 bg-transparent outline-none border-b border-white/50 text-white min-w-0"
+                            value={editingFileName.replace(/\.(txt|md)$/i, '')}
                             onChange={(e) => setEditingFileName(e.target.value)}
-                            onBlur={handleRename}
+                            onBlur={() => {
+                              // Re-attach extension before saving
+                              const ext = file.name.match(/\.(txt|md)$/i)?.[0] ?? '.txt';
+                              if (editingFileName && !editingFileName.match(/\.(txt|md)$/i)) {
+                                setEditingFileName(editingFileName + ext);
+                              }
+                              handleRename();
+                            }}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleRename();
+                              if (e.key === 'Enter') {
+                                const ext = file.name.match(/\.(txt|md)$/i)?.[0] ?? '.txt';
+                                if (editingFileName && !editingFileName.match(/\.(txt|md)$/i)) {
+                                  setEditingFileName(prev => prev + ext);
+                                }
+                                e.currentTarget.blur();
+                              }
                               if (e.key === 'Escape') {
                                 setEditingFileId(null);
                                 isRenamingRef.current = false;
                               }
                             }}
-                            onClick={(e) => e.stopPropagation()}
                           />
-                        ) : (
-                          <span className="truncate flex-1 text-left">{file.name}</span>
-                        )}
-                      </button>
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-all">
+                        </div>
+                      ) : (
+                        /* Normal mode: button */
                         <button
-                          onClick={(e) => startRenaming(file, e)}
-                          className="text-slate-400 hover:text-google-blue transition-all"
-                          title="Rename"
+                          onClick={() => openFile(file.id)}
+                          onDoubleClick={(e) => startRenaming(file, e, 'sidebar')}
+                          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                            activeFileId === file.id
+                              ? 'bg-google-blue text-white shadow-md shadow-google-blue/20'
+                              : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                          }`}
                         >
-                          <Edit3 size={14} />
+                          <FileText size={18} />
+                          <span className="truncate flex-1 text-left">{file.name.replace(/\.(txt|md)$/i, '')}</span>
                         </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); downloadFile(); }}
-                          className="text-slate-400 hover:text-google-blue transition-all"
-                          title="Download"
-                        >
-                          <Download size={14} />
-                        </button>
-                        <button
-                          onClick={(e) => deleteFile(file.id, e)}
-                          className="text-slate-400 hover:text-red-500 transition-all"
-                          title="Delete"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                      )}
+
                     </div>
                   ))}
                   {filteredFiles.length === 0 && (
@@ -900,16 +927,10 @@ export function App() {
                 </nav>
               </div>
             </div>
-          </aside>
-        )}
+          </div>
+        </aside>
 
-        {/* Resizer */}
-        <div
-          onMouseDown={startResizing}
-          className={`hidden lg:flex group relative w-1 cursor-col-resize items-center justify-center bg-slate-200/50 transition-colors hover:bg-google-blue dark:bg-slate-800/50 ${isResizing ? 'bg-google-blue' : ''}`}
-        >
-          <div className="h-12 w-1 rounded-full bg-slate-300/50 group-hover:bg-white/80 dark:bg-slate-700/50"></div>
-        </div>
+
 
         {/* Main Content Area */}
         <main className="relative flex flex-1 flex-col bg-transparent">
@@ -920,23 +941,35 @@ export function App() {
                 <div
                   key={file.id}
                   onClick={() => setActiveFileId(file.id)}
-                  onDoubleClick={(e) => startRenaming(file, e)}
-                  className={`flex h-full items-center gap-2 border-b-2 px-4 text-xs font-bold tracking-wider uppercase cursor-pointer transition-all duration-300 ${
+                  onDoubleClick={(e) => startRenaming(file, e, 'tab')}
+                  className={`flex h-full items-center gap-2 border-b-2 px-4 text-[13px] font-semibold cursor-pointer transition-all duration-300 ${
                     activeFileId === file.id
                       ? 'border-google-blue text-google-blue'
                       : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
                   }`}
                 >
                   <Type size={14} />
-                  {editingFileId === file.id ? (
+                  {editingFileId?.id === file.id && editingFileId.location === 'tab' ? (
                     <input
                       autoFocus
                       className="bg-transparent outline-none border-b border-google-blue text-google-blue"
-                      value={editingFileName}
+                      value={editingFileName.replace(/\.(txt|md)$/i, '')}
                       onChange={(e) => setEditingFileName(e.target.value)}
-                      onBlur={handleRename}
+                      onBlur={() => {
+                        const ext = file.name.match(/\.(txt|md)$/i)?.[0] ?? '.txt';
+                        if (editingFileName && !editingFileName.match(/\.(txt|md)$/i)) {
+                          setEditingFileName(editingFileName + ext);
+                        }
+                        handleRename();
+                      }}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleRename();
+                        if (e.key === 'Enter') {
+                          const ext = file.name.match(/\.(txt|md)$/i)?.[0] ?? '.txt';
+                          if (editingFileName && !editingFileName.match(/\.(txt|md)$/i)) {
+                            setEditingFileName(prev => prev + ext);
+                          }
+                          e.currentTarget.blur();
+                        }
                         if (e.key === 'Escape') {
                           setEditingFileId(null);
                           isRenamingRef.current = false;
@@ -945,7 +978,7 @@ export function App() {
                       onClick={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    file.name
+                    file.name.replace(/\.(txt|md)$/i, '')
                   )}
                   <button
                     onClick={(e) => closeTab(file.id, e)}
@@ -1054,16 +1087,56 @@ export function App() {
 
               <span className="flex items-center gap-1.5 opacity-80 font-mono text-[9px] md:text-[10px]">
                 <History size={10} className="md:w-3 md:h-3" />
-                <span className="hidden xs:inline">SYNC:</span> {activeFile?.lastSaved ? new Date(activeFile.lastSaved).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'NULL'}
+                <span className="hidden xs:inline">SYNC:</span>
+                {activeFile?.lastSaved
+                  ? `${new Date(activeFile.lastSaved).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} ${new Date(activeFile.lastSaved).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : 'NULL'}
               </span>
               <span className="hidden sm:inline mx-1 md:mx-2 h-3 w-px bg-slate-200 dark:bg-slate-800"></span>
-              <span className="hidden sm:inline">UTF-8</span>
+              <span className="hidden sm:inline flex items-center gap-1 font-mono text-[9px] md:text-[10px]">
+                <span className="opacity-60">CREATED:</span>
+                {activeFile?.createdAt
+                  ? `${new Date(activeFile.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} ${new Date(activeFile.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : '—'}
+              </span>
               <span className="mx-1 md:mx-2 h-3 w-px bg-slate-200 dark:bg-slate-800"></span>
               <span className="font-mono text-[9px] md:text-[10px] font-bold text-slate-500 dark:text-slate-300">V1.3.0</span>
             </div>
           </footer>
         </main>
       </div>
+
+      {/* Global Right Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-[100] w-40 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            onClick={(e) => {
+              const file = files.find(f => f.id === contextMenu.fileId);
+              setContextMenu(null);
+              if (file) startRenaming(file, e, 'sidebar');
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-google-blue dark:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+          >
+            <Edit3 size={14} />
+            Rename
+          </button>
+          <button
+            onClick={(e) => {
+              setContextMenu(null);
+              deleteFile(contextMenu.fileId, e);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+          >
+            <Trash2 size={14} />
+            Delete
+          </button>
+        </div>
+      )}
 
       {/* Fixed Branding on Bottom Left - Authenticated View */}
       <div className="fixed bottom-6 left-6 z-50 flex flex-col items-start gap-1">
