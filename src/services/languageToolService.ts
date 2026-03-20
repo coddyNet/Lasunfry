@@ -4,7 +4,7 @@
  * This is a "free for lifetime" alternative to paid AI services.
  */
 
-interface LTMatch {
+export interface LTMatch {
   message: string;
   shortMessage: string;
   offset: number;
@@ -17,14 +17,13 @@ interface LTResponse {
   matches: LTMatch[];
 }
 
-export async function correctGrammarLT(text: string): Promise<string> {
-  if (!text.trim()) return text;
+export async function checkGrammarMatches(text: string): Promise<LTMatch[]> {
+  if (!text.trim()) return [];
 
   try {
     const params = new URLSearchParams();
     params.append('text', text);
     params.append('language', 'en-US');
-    // Enable "picky" mode to catch stylistic, phrasing, and awkward sentence issues
     params.append('level', 'picky');
 
     const response = await fetch('https://api.languagetool.org/v2/check', {
@@ -41,10 +40,20 @@ export async function correctGrammarLT(text: string): Promise<string> {
     }
 
     const data: LTResponse = await response.json();
-    
-    // Apply replacements from back to front to avoid offset shifts
+    return data.matches || [];
+  } catch (error) {
+    console.error("LanguageTool correction failed:", error);
+    return [];
+  }
+}
+
+export async function correctGrammarLT(text: string): Promise<string> {
+  if (!text.trim()) return text;
+
+  try {
+    const matches = await checkGrammarMatches(text);
     let correctedText = text;
-    const sortedMatches = [...data.matches].sort((a, b) => b.offset - a.offset);
+    const sortedMatches = [...matches].sort((a, b) => b.offset - a.offset);
 
     for (const match of sortedMatches) {
       if (match.replacements && match.replacements.length > 0) {

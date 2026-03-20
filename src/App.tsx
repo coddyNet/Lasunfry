@@ -1,22 +1,22 @@
 import * as React from 'react';
-import { useState, useMemo, useEffect, useRef, Component, type ReactNode, type ErrorInfo } from 'react';
-import { 
-  Search, 
-  FileText, 
-  Cloud, 
-  Download, 
-  MoreVertical, 
-  Plus, 
-  X, 
-  Bold, 
-  Italic, 
-  Underline, 
-  Strikethrough, 
-  List, 
+import { useState, useMemo, useEffect, useRef, Component, type ReactNode, type ErrorInfo, useCallback } from 'react';
+import {
+  Search,
+  FileText,
+  Cloud,
+  Download,
+  MoreVertical,
+  Plus,
+  X,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  List,
   ListOrdered,
   ListTodo,
-  CheckSquare, 
-  Sparkles, 
+  CheckSquare,
+  Sparkles,
   Save,
   History,
   Type,
@@ -40,7 +40,7 @@ import {
   Quote,
   Terminal,
   Table as TableIcon,
-  Image as ImageIcon,
+  ImageIcon,
   Minus,
   Search as SearchIcon,
   Replace,
@@ -51,26 +51,32 @@ import {
   ChevronRight,
   WrapText,
   Settings2,
-  Check
+  Check,
+  Wand2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { correctGrammarLT } from './services/languageToolService';
-import { 
-  Editor, 
-  Transforms, 
-  Element as SlateElement, 
-  createEditor, 
+import { checkGrammarMatches, LTMatch } from './services/languageToolService';
+import {
+  Editor,
+  Transforms,
+  Element as SlateElement,
+  createEditor,
   Descendant,
+  Node,
+  Range,
+  Path,
+  Point,
+  RangeRef,
   Text
 } from 'slate';
-import { 
-  Slate, 
-  Editable, 
-  withReact, 
-  useSlate, 
-  RenderElementProps, 
+import {
+  Slate,
+  Editable,
+  withReact,
+  useSlate,
+  RenderElementProps,
   RenderLeafProps,
   useSlateStatic,
   ReactEditor
@@ -78,12 +84,12 @@ import {
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';
 import { deserializeMarkdown, serializeMarkdown, formatMarkdown, type FormattingSettings, DEFAULT_FORMATTING_SETTINGS, getInitialSlateValue } from './utils/slateHelpers';
-import { 
-  auth, 
-  db, 
-  googleProvider, 
-  signInWithPopup, 
-  onAuthStateChanged, 
+import {
+  auth,
+  db,
+  googleProvider,
+  signInWithPopup,
+  onAuthStateChanged,
   type User,
   collection,
   doc,
@@ -115,7 +121,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
     if (this.state.hasError) {
       let errorMessage = "Something went wrong.";
       let isQuotaError = false;
-      
+
       try {
         const errorData = JSON.parse(this.state.error?.message || "{}");
         if (errorData.error?.includes("Quota exceeded")) {
@@ -229,9 +235,9 @@ export function App() {
       isRenamingRef.current = false;
       return;
     }
-    
+
     try {
-      await setDoc(doc(db, 'notes', editingFileId), { 
+      await setDoc(doc(db, 'notes', editingFileId), {
         name: editingFileName,
         lastSaved: Date.now()
       }, { merge: true });
@@ -308,7 +314,7 @@ export function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setIsAuthReady(true);
-      
+
       if (currentUser) {
         // Load formatting settings from Firestore
         try {
@@ -343,13 +349,13 @@ export function App() {
       const fetchedFiles = snapshot.docs
         .map(doc => doc.data() as File)
         .sort((a, b) => b.lastSaved - a.lastSaved);
-      
+
       setFiles(prev => {
         // Only update if data actually changed to prevent cursor resets
         const isDifferent = JSON.stringify(prev) !== JSON.stringify(fetchedFiles);
         return isDifferent ? fetchedFiles : prev;
       });
-      
+
       // Auto-open the most recent file if none are open
       if (fetchedFiles.length > 0 && openFileIds.length === 0) {
         setOpenFileIds([fetchedFiles[0].id]);
@@ -362,16 +368,16 @@ export function App() {
     return () => unsubscribe();
   }, [user, isAuthReady]);
 
-  const activeFile = useMemo(() => 
-    files.find(f => f.id === activeFileId), 
+  const activeFile = useMemo(() =>
+    files.find(f => f.id === activeFileId),
   [files, activeFileId]);
 
-  const openFiles = useMemo(() => 
-    files.filter(f => openFileIds.includes(f.id)), 
+  const openFiles = useMemo(() =>
+    files.filter(f => openFileIds.includes(f.id)),
   [files, openFileIds]);
 
-  const filteredFiles = useMemo(() => 
-    files.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase())), 
+  const filteredFiles = useMemo(() =>
+    files.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase())),
   [files, searchQuery]);
 
   const handleLogin = async () => {
@@ -406,7 +412,7 @@ export function App() {
     }
     setActiveFileId(id);
     if (isMobile) setIsSidebarOpen(false);
-    
+
     // Focus editor after a short delay to allow for render, but only if not renaming
     setTimeout(() => {
       if (!isRenamingRef.current) {
@@ -417,11 +423,11 @@ export function App() {
 
   const handleCreateFile = async () => {
     if (!user) return;
-    
+
     const untitledCount = files.filter(f => f.name.startsWith('Untitled Note')).length;
     const name = `Untitled Note ${untitledCount + 1}.txt`;
     const id = Math.random().toString(36).substr(2, 9);
-    
+
     const newFile: File = {
       id,
       userId: user.uid,
@@ -448,7 +454,7 @@ export function App() {
 
   const executeDelete = async () => {
     if (!confirmDeleteId) return;
-    
+
     try {
       await deleteDoc(doc(db, 'notes', confirmDeleteId));
       setOpenFileIds(prev => prev.filter(openId => openId !== confirmDeleteId));
@@ -483,7 +489,7 @@ export function App() {
       if (typeof contentToSave !== 'string') {
         contentToSave = serializeMarkdown(contentToSave as Descendant[]);
       }
-      
+
       const updatedFile = { ...activeFile, content: contentToSave, lastSaved: Date.now() };
       await setDoc(doc(db, 'notes', activeFile.id), updatedFile);
       setLastSavedStatus('saved');
@@ -499,7 +505,7 @@ export function App() {
   // Auto-save effect
   useEffect(() => {
     if (!activeFile || !user) return;
-    
+
     const timer = setTimeout(() => {
       handleSave();
     }, 5000); // Auto-save after 5 seconds of inactivity
@@ -509,8 +515,8 @@ export function App() {
 
   const downloadFile = () => {
     if (!activeFile) return;
-    const contentStr = typeof activeFile.content === 'string' 
-      ? activeFile.content 
+    const contentStr = typeof activeFile.content === 'string'
+      ? activeFile.content
       : serializeMarkdown(activeFile.content);
     const blob = new Blob([contentStr], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -525,16 +531,16 @@ export function App() {
 
   const insertMarkdown = (prefix: string, suffix: string = '') => {
     if (!editorRef.current || !activeFile) return;
-    
+
     const textarea = editorRef.current;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const text = textarea.value;
     const selectedText = text.substring(start, end);
-    
+
     const newText = text.substring(0, start) + prefix + selectedText + suffix + text.substring(end);
     handleContentChange(newText);
-    
+
     // Restore focus and selection
     setTimeout(() => {
       textarea.focus();
@@ -558,13 +564,13 @@ export function App() {
 
   const handleFindReplace = (type: 'find' | 'replace' | 'replaceAll') => {
     if (!activeFile || !findText) return;
-    
-    // For Slate, we should ideally use Slate's search capability, 
+
+    // For Slate, we should ideally use Slate's search capability,
     // but for now we'll convert to string to maintain existing logic
-    let content = typeof activeFile.content === 'string' 
-      ? activeFile.content 
+    let content = typeof activeFile.content === 'string'
+      ? activeFile.content
       : serializeMarkdown(activeFile.content);
-      
+
     if (type === 'find') {
       const index = content.indexOf(findText);
       if (index !== -1 && editorRef.current) {
@@ -593,8 +599,8 @@ export function App() {
   };
 
   const stats = useMemo(() => {
-    const text = typeof activeFile?.content === 'string' 
-      ? activeFile.content 
+    const text = typeof activeFile?.content === 'string'
+      ? activeFile.content
       : serializeMarkdown(activeFile?.content || []);
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     const chars = text.length;
@@ -638,7 +644,7 @@ export function App() {
       <div className="flex h-screen w-full flex-col items-center justify-center bg-background-light p-6 dark:bg-background-dark relative overflow-hidden">
         {/* Theme Toggle on Landing Page - Fixed Top Right */}
         <div className="fixed top-2 right-2 md:top-6 md:right-6 z-50">
-          <button 
+          <button
             onClick={() => setIsDarkMode(!isDarkMode)}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-white/50 text-slate-600 shadow-xl backdrop-blur-md hover:bg-white dark:bg-slate-800/50 dark:text-slate-400 dark:hover:bg-slate-800 transition-all duration-200 border border-slate-100 dark:border-slate-800"
             title="Toggle Dark Mode"
@@ -669,16 +675,16 @@ export function App() {
               A modern, clean markdown editor and note-taking application for your masterpieces.
             </p>
           </div>
-          <button 
+          <button
             onClick={handleLogin}
             className="group flex items-center gap-4 rounded-xl bg-white px-10 py-4 text-lg font-bold text-slate-700 shadow-xl transition-all hover:shadow-2xl hover:scale-105 active:scale-95 border border-slate-100 dark:bg-slate-800 dark:text-white dark:border-slate-700"
           >
             <div className="flex h-6 w-6 items-center justify-center">
               <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05" />
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
               </svg>
             </div>
             Sign in with Google
@@ -716,13 +722,13 @@ export function App() {
               This action cannot be undone. Are you sure you want to delete this note?
             </p>
             <div className="mt-6 flex gap-3">
-              <button 
+              <button
                 onClick={() => setConfirmDeleteId(null)}
                 className="flex-1 rounded-xl bg-slate-100 py-3 font-bold text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={executeDelete}
                 className="flex-1 rounded-xl bg-red-500 py-3 font-bold text-white hover:bg-red-600 transition-colors"
               >
@@ -735,7 +741,7 @@ export function App() {
       {/* Top Navigation Bar */}
       <header className="flex h-16 items-center justify-between border-b border-slate-100 bg-white/40 px-3 md:px-6 backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-950/40 sticky top-0 z-40">
         <div className="flex items-center gap-2 md:gap-6">
-          <button 
+          <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"
           >
@@ -752,7 +758,7 @@ export function App() {
         </div>
         <div className="flex items-center gap-1 md:gap-4">
           <div className="flex items-center gap-1">
-            <button 
+            <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-all duration-200"
               title="Toggle Dark Mode"
@@ -760,7 +766,7 @@ export function App() {
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
           </div>
-          
+
           <div className="flex items-center gap-1 md:gap-4 border-l border-slate-200 pl-1 md:pl-4 dark:border-slate-800">
             <div className="flex items-center gap-1.5 rounded-xl bg-white/50 px-1.5 md:px-3 py-1 dark:bg-slate-900/50 backdrop-blur-sm border border-slate-100 dark:border-slate-800">
               {user.photoURL ? (
@@ -770,7 +776,7 @@ export function App() {
               )}
               <span className="hidden sm:inline text-[10px] md:text-xs font-medium text-slate-700 dark:text-slate-300 truncate max-w-[60px] md:max-w-none">{user.displayName}</span>
             </div>
-            <button 
+            <button
               onClick={handleLogout}
               className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all duration-200 dark:hover:bg-red-950/30"
               title="Sign Out"
@@ -784,7 +790,7 @@ export function App() {
       <div className="flex flex-1 overflow-hidden relative">
         {/* Sidebar Overlay for Mobile */}
         {isSidebarOpen && isMobile && (
-          <div 
+          <div
             onClick={() => setIsSidebarOpen(false)}
             className="fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-sm lg:hidden"
           />
@@ -792,7 +798,7 @@ export function App() {
 
         {/* Sidebar */}
         {isSidebarOpen && (
-          <aside 
+          <aside
             className="fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-100 bg-white/80 backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-950/80 lg:relative lg:inset-auto lg:z-0 lg:bg-white/40 overflow-hidden shadow-2xl lg:shadow-none"
             style={{ width: !isMobile ? sidebarWidth : '85%', maxWidth: '320px' }}
           >
@@ -800,9 +806,9 @@ export function App() {
               <div className="flex flex-col gap-6">
                 <div className="relative w-full px-2 mt-2">
                   <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    className="h-10 w-full rounded-xl border-none bg-white/50 pl-10 pr-4 text-sm font-medium focus:ring-2 focus:ring-google-blue/30 dark:bg-slate-900/50 dark:text-white backdrop-blur-sm transition-all" 
-                    placeholder="Search notes..." 
+                  <input
+                    className="h-10 w-full rounded-xl border-none bg-white/50 pl-10 pr-4 text-sm font-medium focus:ring-2 focus:ring-google-blue/30 dark:bg-slate-900/50 dark:text-white backdrop-blur-sm transition-all"
+                    placeholder="Search notes..."
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -810,7 +816,7 @@ export function App() {
                 </div>
                 <div className="flex items-center justify-between px-2 pt-2">
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Workspace</p>
-                  <button 
+                  <button
                     onClick={handleCreateFile}
                     className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-google-blue shadow-sm hover:shadow-md hover:bg-slate-50 transition-all duration-200 dark:bg-slate-800 dark:hover:bg-slate-700"
                     title="New File"
@@ -825,8 +831,8 @@ export function App() {
                         onClick={() => openFile(file.id)}
                         onDoubleClick={(e) => startRenaming(file, e)}
                         className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-                          activeFileId === file.id 
-                            ? 'bg-google-blue text-white shadow-md shadow-google-blue/20' 
+                          activeFileId === file.id
+                            ? 'bg-google-blue text-white shadow-md shadow-google-blue/20'
                             : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
                         }`}
                       >
@@ -852,21 +858,21 @@ export function App() {
                         )}
                       </button>
                       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-all">
-                        <button 
+                        <button
                           onClick={(e) => startRenaming(file, e)}
                           className="text-slate-400 hover:text-google-blue transition-all"
                           title="Rename"
                         >
                           <Edit3 size={14} />
                         </button>
-                        <button 
+                        <button
                           onClick={(e) => { e.stopPropagation(); downloadFile(); }}
                           className="text-slate-400 hover:text-google-blue transition-all"
                           title="Download"
                         >
                           <Download size={14} />
                         </button>
-                        <button 
+                        <button
                           onClick={(e) => deleteFile(file.id, e)}
                           className="text-slate-400 hover:text-red-500 transition-all"
                           title="Delete"
@@ -882,7 +888,7 @@ export function App() {
                         <Plus size={20} />
                       </div>
                       <p className="text-xs font-medium text-slate-500 dark:text-slate-400">No notes yet</p>
-                      <button 
+                      <button
                         onClick={handleCreateFile}
                         className="mt-3 text-xs font-bold text-primary hover:underline"
                       >
@@ -897,7 +903,7 @@ export function App() {
         )}
 
         {/* Resizer */}
-        <div 
+        <div
           onMouseDown={startResizing}
           className={`hidden lg:flex group relative w-1 cursor-col-resize items-center justify-center bg-slate-200/50 transition-colors hover:bg-google-blue dark:bg-slate-800/50 ${isResizing ? 'bg-google-blue' : ''}`}
         >
@@ -940,7 +946,7 @@ export function App() {
                   ) : (
                     file.name
                   )}
-                  <button 
+                  <button
                     onClick={(e) => closeTab(file.id, e)}
                     className={`ml-1 rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 ${
                       activeFileId === file.id ? 'text-google-blue' : 'text-slate-400'
@@ -950,7 +956,7 @@ export function App() {
                   </button>
                 </div>
               ))}
-              <button 
+              <button
                 onClick={handleCreateFile}
                 className="ml-2 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
               >
@@ -966,9 +972,9 @@ export function App() {
             <div className="overflow-hidden border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
               <div className="flex flex-wrap items-center gap-4 p-4">
                 <div className="flex items-center gap-2">
-                  <input 
-                    type="text" 
-                    placeholder="Find..." 
+                  <input
+                    type="text"
+                    placeholder="Find..."
                     value={findText}
                     onChange={(e) => setFindText(e.target.value)}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-google-blue dark:border-slate-700 dark:bg-slate-800"
@@ -976,9 +982,9 @@ export function App() {
                   <button onClick={() => handleFindReplace('find')} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-bold hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600">Find Next</button>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input 
-                    type="text" 
-                    placeholder="Replace with..." 
+                  <input
+                    type="text"
+                    placeholder="Replace with..."
                     value={replaceText}
                     onChange={(e) => setReplaceText(e.target.value)}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-google-blue dark:border-slate-700 dark:bg-slate-800"
@@ -1005,11 +1011,11 @@ export function App() {
                 <p className="text-sm text-slate-400">Select a file from the sidebar or create a new one.</p>
               </div>
             ) : (
-              <div className="flex h-full w-full">                <NoteEditor 
+              <div className="flex h-full w-full">                <NoteEditor
                   key={activeFile.id}
                   initialContent={activeFile.content}
                   onChange={(newContent) => {
-                    setFiles(prev => prev.map(f => 
+                    setFiles(prev => prev.map(f =>
                       f.id === activeFile.id ? { ...f, content: newContent } : f
                     ));
                   }}
@@ -1021,7 +1027,7 @@ export function App() {
                 />
               </div>            )}
           </div>
-          
+
           {/* Footer Info */}
           <footer className="flex items-center justify-between border-t border-slate-100 bg-white/40 px-3 md:px-6 py-2 text-[10px] md:text-[11px] font-medium text-slate-400 backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-950/40">
             <div className="flex items-center gap-2 md:gap-4 font-mono text-[9px] md:text-[10px] tracking-wider uppercase">
@@ -1039,8 +1045,8 @@ export function App() {
                   lastSavedStatus === 'error' ? 'bg-red-500' : 'bg-slate-300'
                 }`}></span>
                 <span className="hidden sm:inline">
-                  {lastSavedStatus === 'saving' ? 'SAVING...' : 
-                   lastSavedStatus === 'saved' ? 'SAVED' : 
+                  {lastSavedStatus === 'saving' ? 'SAVING...' :
+                   lastSavedStatus === 'saved' ? 'SAVED' :
                    lastSavedStatus === 'error' ? 'ERROR' : 'SYNCED'}
                 </span>
               </span>
@@ -1078,8 +1084,8 @@ export function App() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
               className={`flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-xl ${
-                toast.type === 'error' 
-                  ? 'border-red-100 bg-red-50 text-red-600 dark:border-red-900/50 dark:bg-red-950/80 dark:text-red-400' 
+                toast.type === 'error'
+                  ? 'border-red-100 bg-red-50 text-red-600 dark:border-red-900/50 dark:bg-red-950/80 dark:text-red-400'
                   : toast.type === 'success'
                   ? 'border-green-100 bg-green-50 text-green-600 dark:border-green-900/50 dark:bg-green-950/80 dark:text-green-400'
                   : 'border-slate-100 bg-white/80 text-slate-600 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400'
@@ -1098,18 +1104,18 @@ export function App() {
 const LIST_TYPES = ['numbered-list', 'bulleted-list']
 const TEXT_ALIGN_TYPES = ['left', 'center', 'right', 'justify']
 
-const NoteEditor = ({ 
-  initialContent, 
-  onChange, 
-  fontSize, 
+const NoteEditor = ({
+  initialContent,
+  onChange,
+  fontSize,
   activeFileId,
   showToast,
   formattingSettings,
   onSettingsChange
-}: { 
+}: {
   initialContent: string | Descendant[];
   onChange: (val: Descendant[]) => void;
-  fontSize: number; 
+  fontSize: number;
   activeFileId: string;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   formattingSettings: FormattingSettings;
@@ -1121,11 +1127,85 @@ const NoteEditor = ({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCorrecting, setIsCorrecting] = useState(false);
 
+  // Custom Inline Grammar State
+  interface GrammarMatch {
+    id: string;
+    rangeRef: RangeRef;
+    replacements: string[];
+    message: string;
+    shortMessage: string;
+  }
+  const [grammarMatches, setGrammarMatches] = useState<GrammarMatch[]>([]);
+  const [activeGrammarMatch, setActiveGrammarMatch] = useState<{ match: GrammarMatch, rect: DOMRect } | null>(null);
+
+  useEffect(() => {
+    const handleOpenGrammarMatch = (e: any) => {
+      setActiveGrammarMatch(e.detail);
+    };
+    window.addEventListener('openGrammarMatch', handleOpenGrammarMatch);
+
+    const handleClose = () => setActiveGrammarMatch(null);
+    window.addEventListener('resize', handleClose);
+    window.addEventListener('scroll', handleClose);
+    document.addEventListener('click', handleClose);
+
+    return () => {
+      window.removeEventListener('openGrammarMatch', handleOpenGrammarMatch);
+      window.removeEventListener('resize', handleClose);
+      window.removeEventListener('scroll', handleClose);
+      document.removeEventListener('click', handleClose);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Clean up rangeRefs on unmount
+    return () => {
+      grammarMatches.forEach(m => m.rangeRef.unref());
+    };
+  }, [grammarMatches]);
+
+  const decorate = useCallback(([node, path]: [Node, Path]) => {
+    const ranges: any[] = [];
+    if (!Text.isText(node)) return ranges;
+    if (grammarMatches.length === 0) return ranges;
+
+    for (const match of grammarMatches) {
+      const currentRange = match.rangeRef.current;
+      if (currentRange && Range.includes(currentRange, path)) {
+        const intersection = Range.intersection(currentRange, {
+          anchor: { path, offset: 0 },
+          focus: { path, offset: node.text.length }
+        });
+        if (intersection) {
+          ranges.push({ ...intersection, grammarError: true, matchData: match });
+        }
+      }
+    }
+    return ranges;
+  }, [grammarMatches]);
+
+  const applyGrammarFix = (match: GrammarMatch, replacement: string) => {
+    const currentRange = match.rangeRef.current;
+    if (!currentRange) return;
+    Transforms.select(editor, currentRange);
+    Transforms.insertText(editor, replacement);
+
+    match.rangeRef.unref();
+    setGrammarMatches(prev => prev.filter(m => m.id !== match.id));
+    setActiveGrammarMatch(null);
+  }
+
+  const dismissGrammarMatch = (match: GrammarMatch) => {
+    match.rangeRef.unref();
+    setGrammarMatches(prev => prev.filter(m => m.id !== match.id));
+    setActiveGrammarMatch(null);
+  }
+
   const handleFormat = () => {
     const markdown = serializeMarkdown(editor.children);
     const formatted = formatMarkdown(markdown, formattingSettings);
     const newNodes = deserializeMarkdown(formatted);
-    
+
     // Replace all nodes
     Transforms.delete(editor, {
       at: {
@@ -1140,22 +1220,62 @@ const NoteEditor = ({
   const handleGrammarFix = async () => {
     if (editor.children.length === 0 || isCorrecting) return;
     setIsCorrecting(true);
+
+    // Clear old state safely
+    grammarMatches.forEach(m => m.rangeRef.unref());
+    setGrammarMatches([]);
+    setActiveGrammarMatch(null);
+
+    const newMatches: GrammarMatch[] = [];
+
     try {
-      const markdown = serializeMarkdown(editor.children);
-      const corrected = await correctGrammarLT(markdown);
-      
-      const newNodes = deserializeMarkdown(corrected);
-      
-      // Replace all nodes
-      Transforms.delete(editor, {
-        at: {
-          anchor: Editor.start(editor, []),
-          focus: Editor.end(editor, []),
-        },
-      });
-      Transforms.insertNodes(editor, newNodes);
-      
-      showToast("Grammar check complete!", "success");
+      for (const [blockNode, blockPath] of Editor.nodes(editor, {
+        match: n => SlateElement.isElement(n) && Editor.isBlock(editor, n as SlateElement)
+      })) {
+        const text = Node.string(blockNode);
+        if (!text.trim()) continue;
+
+        const ltMatches = await checkGrammarMatches(text);
+
+        for (const m of ltMatches) {
+           let currentOffset = 0;
+           let anchorPoint: Point | null = null;
+           let focusPoint: Point | null = null;
+
+           for (const [textNode, textPath] of Editor.nodes(editor, { at: blockPath, match: Text.isText })) {
+             const nodeLength = (textNode as any).text.length;
+
+             if (!anchorPoint && m.offset < currentOffset + nodeLength) {
+               anchorPoint = { path: textPath, offset: m.offset - currentOffset };
+             }
+             if (anchorPoint && !focusPoint && m.offset + m.length <= currentOffset + nodeLength) {
+               focusPoint = { path: textPath, offset: m.offset + m.length - currentOffset };
+               break;
+             }
+             currentOffset += nodeLength;
+           }
+
+           if (anchorPoint && focusPoint && m.replacements.length > 0) {
+              const matchRange = { anchor: anchorPoint, focus: focusPoint };
+              const rangeRef = Editor.rangeRef(editor, matchRange, { affinity: 'forward' });
+              newMatches.push({
+                id: Math.random().toString(36).substring(7),
+                rangeRef,
+                replacements: m.replacements.map(r => r.value),
+                message: m.message,
+                shortMessage: m.shortMessage
+              });
+           }
+        }
+      }
+
+      setGrammarMatches(newMatches);
+
+      if (newMatches.length > 0) {
+        showToast(`Found ${newMatches.length} grammar suggestions!`, "success");
+      } else {
+        showToast("No grammar issues found!", "success");
+      }
     } catch (error) {
       showToast("Failed to check grammar.", "error");
     } finally {
@@ -1163,7 +1283,8 @@ const NoteEditor = ({
     }
   };
 
-  const [value, setValue] = useState<Descendant[]>(() => 
+
+  const [value, setValue] = useState<Descendant[]>(() =>
     typeof initialContent === 'string' ? (initialContent ? deserializeMarkdown(initialContent) : getInitialSlateValue()) : (initialContent || getInitialSlateValue())
   );
 
@@ -1188,8 +1309,8 @@ const NoteEditor = ({
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto p-4 md:p-[20px] w-full">
-      <Slate 
-        editor={editor} 
+      <Slate
+        editor={editor}
         initialValue={value}
         onChange={val => {
           setValue(val);
@@ -1210,11 +1331,11 @@ const NoteEditor = ({
             <BlockButton format="bulleted-list" icon={<List size={16} />} title="Bulleted List" />
             <BlockButton format="numbered-list" icon={<ListOrdered size={16} />} title="Numbered List" />
           </div>
-          
+
           <div className="flex items-center gap-1">
             <div className="relative">
               <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
-                <button 
+                <button
                   onClick={handleFormat}
                   className="flex items-center gap-1.5 px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700 transition-all border-r border-slate-200 dark:border-slate-700"
                   title="Format Document"
@@ -1222,7 +1343,7 @@ const NoteEditor = ({
                   <WrapText size={14} />
                   <span className="hidden sm:inline">Format</span>
                 </button>
-                <button 
+                <button
                   onClick={() => setIsSettingsOpen(!isSettingsOpen)}
                   className={`flex items-center justify-center px-2 py-1 transition-all ${isSettingsOpen ? 'bg-google-blue text-white' : 'text-slate-400 hover:text-google-blue hover:bg-slate-200 dark:hover:bg-slate-700'}`}
                   title="Formatting Settings"
@@ -1235,9 +1356,9 @@ const NoteEditor = ({
               <AnimatePresence>
                 {isSettingsOpen && (
                   <>
-                    <div 
-                      className="fixed inset-0 z-10" 
-                      onClick={() => setIsSettingsOpen(false)} 
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setIsSettingsOpen(false)}
                     />
                     <motion.div
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -1249,7 +1370,7 @@ const NoteEditor = ({
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400">List Marker</label>
-                          <select 
+                          <select
                             value={formattingSettings.listMarker}
                             onChange={(e) => onSettingsChange({...formattingSettings, listMarker: e.target.value as any})}
                             className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -1259,7 +1380,7 @@ const NoteEditor = ({
                             <option value="+">Plus (+)</option>
                           </select>
                         </div>
-                        
+
                         {[
                           { id: 'collapseEmptyLines', label: 'Collapse Lines' },
                           { id: 'spaceAfterHeading', label: 'Space after #' },
@@ -1286,13 +1407,13 @@ const NoteEditor = ({
               </AnimatePresence>
             </div>
 
-            <button 
+            <button
               onClick={handleGrammarFix}
               disabled={isCorrecting}
               className="flex items-center gap-1.5 rounded-lg bg-google-blue/10 px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider text-google-blue hover:bg-google-blue/20 transition-all disabled:opacity-50"
               title="Fix Grammar"
             >
-              {isCorrecting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              {isCorrecting ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
               <span className="hidden sm:inline">Fix Grammar</span>
             </button>
           </div>
@@ -1301,6 +1422,7 @@ const NoteEditor = ({
         <Editable
           renderElement={renderElement}
           renderLeaf={renderLeaf}
+          decorate={decorate}
           placeholder="Start typing your masterpieces here..."
           spellCheck
           autoFocus
@@ -1308,6 +1430,46 @@ const NoteEditor = ({
           style={{ fontSize: `${fontSize}px` }}
           className="editor-area h-full min-h-[500px] w-full outline-none leading-relaxed text-slate-800 dark:text-slate-200 font-sans"
         />
+
+        {activeGrammarMatch && (
+          <div
+            className="fixed z-50 bg-white dark:bg-slate-800 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-200 dark:border-slate-700 p-4 w-72 text-sm font-sans"
+            style={{
+              top: activeGrammarMatch.rect.bottom + 8,
+              left: Math.max(10, activeGrammarMatch.rect.left - 50)
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-3">
+              {activeGrammarMatch.match.shortMessage || "Replace the word"}
+            </div>
+
+            {(activeGrammarMatch.match.message && activeGrammarMatch.match.message !== activeGrammarMatch.match.shortMessage) && (
+              <div className="bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 rounded-lg p-2.5 mb-3 text-xs leading-relaxed border border-orange-100 dark:border-orange-900/50">
+                {activeGrammarMatch.match.message}
+              </div>
+            )}
+
+            <div className="space-y-1 mt-2">
+              {activeGrammarMatch.match.replacements.slice(0, 3).map((r, i) => (
+                <button
+                  key={i}
+                  className="block w-full text-left px-3 py-2.5 bg-google-blue/5 hover:bg-google-blue/15 text-google-blue hover:text-blue-700 dark:hover:text-blue-400 rounded-lg font-bold transition-all"
+                  onClick={() => applyGrammarFix(activeGrammarMatch.match, r)}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+
+            <button
+              className="flex items-center justify-center gap-2 w-full text-center px-3 py-2.5 mt-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 hover:text-red-500 rounded-lg border-t border-slate-100 dark:border-slate-700 font-medium"
+              onClick={() => dismissGrammarMatch(activeGrammarMatch.match)}
+            >
+              <Trash2 size={14} /> Dismiss
+            </button>
+          </div>
+        )}
       </Slate>
     </div>
   );
@@ -1455,25 +1617,42 @@ const Element = (props: RenderElementProps) => {
   }
 }
 
-const Leaf = ({ attributes, children, leaf }: RenderLeafProps) => {
+const Leaf = ({ attributes, children, leaf }: any) => {
+  let content = children
   if (leaf.bold) {
-    children = <strong>{children}</strong>
+    content = <strong>{content}</strong>
   }
-
-  if (leaf.code) {
-    children = <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{children}</code>
-  }
-
   if (leaf.italic) {
-    children = <em>{children}</em>
+    content = <em>{content}</em>
   }
-
+  if (leaf.code) {
+    content = <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{content}</code>
+  }
   if (leaf.underline) {
-    children = <u>{children}</u>
+    content = <u>{content}</u>
   }
 
-  return <span {...attributes}>{children}</span>
+  if (leaf.grammarError) {
+    content = (
+      <span
+        className="bg-pink-100/50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 border-b-2 border-pink-400 dark:border-pink-500 cursor-pointer transition-colors hover:bg-pink-200/50 dark:hover:bg-pink-800/50"
+        onClick={(e) => {
+           e.preventDefault();
+           e.stopPropagation();
+           const event = new CustomEvent('openGrammarMatch', {
+             detail: { match: leaf.matchData, rect: e.currentTarget.getBoundingClientRect() }
+           });
+           window.dispatchEvent(event);
+        }}
+      >
+        {content}
+      </span>
+    );
+  }
+
+  return <span {...attributes}>{content}</span>
 }
+
 
 function BrandIcon({ size = 24, className = "" }: { size?: number; className?: string }) {
   return (
