@@ -292,7 +292,7 @@ export function App() {
     } else {
       window.removeEventListener('mousemove', resize);
       window.removeEventListener('mouseup', stopResizing);
-    }
+    };
     return () => {
       window.removeEventListener('mousemove', resize);
       window.removeEventListener('mouseup', stopResizing);
@@ -1204,17 +1204,49 @@ const NoteEditor = ({
     setActiveGrammarMatch(null);
   }
 
-  const handleFormat = async () => {
+  const [isRephrasing, setIsRephrasing] = useState(false);
+
+  const handleAIRephrase = async () => {
+    if (editor.children.length === 0 || isRephrasing) return;
+    
+    setIsRephrasing(true);
+    showToast("AI is rephrasing your text...", "info");
+
+    try {
+      const markdown = serializeMarkdown(editor.children);
+      // Clean with local formatter first
+      const formatted = formatMarkdown(markdown, formattingSettings);
+      // Rephrase with Gemini
+      const rephrased = await rephraseWithGemini(formatted);
+      const newNodes = deserializeMarkdown(rephrased);
+
+      // Replace all nodes
+      Transforms.delete(editor, {
+        at: {
+          anchor: Editor.start(editor, []),
+          focus: Editor.end(editor, []),
+        },
+      });
+      Transforms.insertNodes(editor, newNodes);
+      
+      // Clear grammar underlines
+      grammarMatches.forEach(m => m.rangeRef.unref());
+      setGrammarMatches([]);
+      setActiveGrammarMatch(null);
+      
+      showToast("Text improved by AI!", "success");
+    } catch (error) {
+       console.error("AI Rephrase failed:", error);
+       showToast("AI Rephrase failed. Try again later.", "error");
+    } finally {
+      setIsRephrasing(false);
+    }
+  };
+
+  const handleFormat = () => {
     const markdown = serializeMarkdown(editor.children);
     const formatted = formatMarkdown(markdown, formattingSettings);
-    
-    // Re-phrase: apply grammar/spelling corrections via LanguageTool first for local fixes
-    const corrected = await correctGrammarLT(formatted);
-    
-    // AI Rephrase: use Gemini for professional restructuring (the user's request)
-    const rephrased = await rephraseWithGemini(corrected);
-    
-    const newNodes = deserializeMarkdown(rephrased);
+    const newNodes = deserializeMarkdown(formatted);
 
     // Replace all nodes
     Transforms.delete(editor, {
@@ -1224,13 +1256,7 @@ const NoteEditor = ({
       },
     });
     Transforms.insertNodes(editor, newNodes);
-    
-    // Clear grammar underlines since we just fixed everything
-    grammarMatches.forEach(m => m.rangeRef.unref());
-    setGrammarMatches([]);
-    setActiveGrammarMatch(null);
-    
-    showToast("Formatted & Rephrased!", "success");
+    showToast("File Formatted!", "success");
   }
 
   // ── Core grammar scanning function (reusable) ──
@@ -1469,8 +1495,23 @@ const NoteEditor = ({
               </AnimatePresence>
             </div>
 
-            <button
-              onClick={handleFixAllGrammar}
+              {/* Rephrase AI Button */}
+              <button
+                onClick={handleAIRephrase}
+                disabled={isRephrasing}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] md:text-xs font-bold uppercase tracking-wider rounded-lg border-2 transition-all shadow-sm ${
+                  isRephrasing 
+                    ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed dark:border-slate-800 dark:bg-slate-900' 
+                    : 'border-indigo-400 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white dark:border-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-600 dark:hover:text-white active:scale-95'
+                }`}
+                title="Rephrase with Gemini AI"
+              >
+                <Sparkles size={14} className={isRephrasing ? 'animate-spin' : 'animate-pulse text-indigo-500'} />
+                <span>{isRephrasing ? 'Thinking...' : 'Rephrase'}</span>
+              </button>
+
+              <button
+                onClick={handleFixAllGrammar}
               disabled={isCorrecting}
               className={`flex items-center gap-1.5 rounded-lg px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 ${
                 grammarMatches.length > 0
