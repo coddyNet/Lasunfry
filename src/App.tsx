@@ -1126,6 +1126,8 @@ const NoteEditor = ({
   const editor = useMemo(() => withHistory(withReact(createEditor())), [])
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCorrecting, setIsCorrecting] = useState(false);
+  const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isCheckingRef = useRef(false);
 
   // Custom Inline Grammar State
   interface GrammarMatch {
@@ -1217,11 +1219,13 @@ const NoteEditor = ({
     showToast("File Formatted!", "success");
   }
 
-  const handleGrammarFix = async () => {
-    if (editor.children.length === 0 || isCorrecting) return;
-    setIsCorrecting(true);
+  // ── Core grammar scanning function (reusable) ──
+  const runGrammarCheck = async (silent = false) => {
+    if (editor.children.length === 0 || isCheckingRef.current) return;
+    isCheckingRef.current = true;
+    if (!silent) setIsCorrecting(true);
 
-    // Clear old state safely
+    // Clear old state
     grammarMatches.forEach(m => m.rangeRef.unref());
     setGrammarMatches([]);
     setActiveGrammarMatch(null);
@@ -1271,16 +1275,52 @@ const NoteEditor = ({
 
       setGrammarMatches(newMatches);
 
-      if (newMatches.length > 0) {
-        showToast(`Found ${newMatches.length} grammar suggestions!`, "success");
-      } else {
-        showToast("No grammar issues found!", "success");
+      if (!silent) {
+        if (newMatches.length > 0) {
+          showToast(`Found ${newMatches.length} grammar issues`, "info");
+        } else {
+          showToast("No grammar issues found!", "success");
+        }
       }
     } catch (error) {
-      showToast("Failed to check grammar.", "error");
+      if (!silent) showToast("Grammar check failed.", "error");
     } finally {
-      setIsCorrecting(false);
+      isCheckingRef.current = false;
+      if (!silent) setIsCorrecting(false);
     }
+  };
+
+  // ── "Fix Grammar" = apply ALL first-suggestions at once ──
+  const handleFixAllGrammar = async () => {
+    if (isCorrecting) return;
+
+    // If no matches yet, run a scan first
+    if (grammarMatches.length === 0) {
+      await runGrammarCheck(false);
+      return; // user can see underlines, then press again to fix all
+    }
+
+    // Apply fixes from back to front so ranges stay valid
+    const sorted = [...grammarMatches].sort((a, b) => {
+      const aRange = a.rangeRef.current;
+      const bRange = b.rangeRef.current;
+      if (!aRange || !bRange) return 0;
+      return Path.compare(bRange.anchor.path, aRange.anchor.path) || bRange.anchor.offset - aRange.anchor.offset;
+    });
+
+    let fixedCount = 0;
+    for (const match of sorted) {
+      const currentRange = match.rangeRef.current;
+      if (!currentRange || match.replacements.length === 0) continue;
+      Transforms.select(editor, currentRange);
+      Transforms.insertText(editor, match.replacements[0]);
+      match.rangeRef.unref();
+      fixedCount++;
+    }
+
+    setGrammarMatches([]);
+    setActiveGrammarMatch(null);
+    showToast(`Fixed ${fixedCount} grammar issues!`, "success");
   };
 
 
@@ -1313,6 +1353,14 @@ const NoteEditor = ({
         editor={editor}
         initialValue={value}
         onChange={val => {
+          // Auto grammar check: debounce 2s after typing stops
+          if (editor.operations.some(op => op.type === 'insert_text' || op.type === 'remove_text')) {
+            if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+            setActiveGrammarMatch(null);
+            checkTimerRef.current = setTimeout(() => {
+              runGrammarCheck(true); // silent background check
+            }, 2000);
+          }
           setValue(val);
           onChange(val);
         }}
@@ -1408,13 +1456,19 @@ const NoteEditor = ({
             </div>
 
             <button
-              onClick={handleGrammarFix}
+              onClick={handleFixAllGrammar}
               disabled={isCorrecting}
-              className="flex items-center gap-1.5 rounded-lg bg-google-blue/10 px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider text-google-blue hover:bg-google-blue/20 transition-all disabled:opacity-50"
-              title="Fix Grammar"
+              className={`flex items-center gap-1.5 rounded-lg px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 ${
+                grammarMatches.length > 0
+                  ? 'bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40'
+                  : 'bg-google-blue/10 text-google-blue hover:bg-google-blue/20'
+              }`}
+              title={grammarMatches.length > 0 ? 'Fix All Grammar Issues' : 'Check Grammar'}
             >
               {isCorrecting ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
-              <span className="hidden sm:inline">Fix Grammar</span>
+              <span className="hidden sm:inline">
+                {grammarMatches.length > 0 ? `Fix ${grammarMatches.length} Issues` : 'Fix Grammar'}
+              </span>
             </button>
           </div>
         </div>
