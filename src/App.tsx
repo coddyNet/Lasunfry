@@ -45,12 +45,37 @@ import {
   Settings,
   Maximize2,
   Minimize2,
-  ChevronDown
+  ChevronDown,
+  ChevronRight,
+  WrapText,
+  Settings2,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { correctGrammar } from './services/geminiService';
+import { 
+  Editor, 
+  Transforms, 
+  Element as SlateElement, 
+  createEditor, 
+  Descendant,
+  Text
+} from 'slate';
+import { 
+  Slate, 
+  Editable, 
+  withReact, 
+  useSlate, 
+  RenderElementProps, 
+  RenderLeafProps,
+  useSlateStatic,
+  ReactEditor
+} from 'slate-react';
+import { withHistory } from 'slate-history';
+import isHotkey from 'is-hotkey';
+import { deserializeMarkdown, serializeMarkdown, formatMarkdown, type FormattingSettings, DEFAULT_FORMATTING_SETTINGS, getInitialSlateValue } from './utils/slateHelpers';
 import { 
   auth, 
   db, 
@@ -114,16 +139,16 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
               </div>
             </div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-              {isQuotaError ? "Quota Exceeded" : "Application Error"}
+              {isQuotaError ? "Quota Exceeded" : "Something went wrong"}
             </h1>
-            <p className="text-slate-600 dark:text-slate-400">
+            <p className="text-slate-500 dark:text-slate-400">
               {errorMessage}
             </p>
             <button
               onClick={() => window.location.reload()}
-              className="rounded-lg bg-google-blue px-6 py-2 font-medium text-white hover:bg-google-blue/90 transition-colors"
+              className="mt-4 rounded-xl bg-google-blue px-6 py-2 text-sm font-bold text-white hover:bg-google-blue/90"
             >
-              Reload Application
+              Reload Page
             </button>
           </div>
         </div>
@@ -134,11 +159,12 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
   }
 }
 
+
 interface File {
   id: string;
   userId: string;
   name: string;
-  content: string;
+  content: string | Descendant[];
   type: 'txt' | 'md';
   lastSaved: number;
   createdAt: number;
@@ -177,8 +203,9 @@ export function App() {
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
   const [editingFileName, setEditingFileName] = useState('');
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'info' }[]>([]);
+  const [formattingSettings, setFormattingSettings] = useState<FormattingSettings>(DEFAULT_FORMATTING_SETTINGS);
   const isRenamingRef = useRef(false);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<any>(null); // Slate editor reference
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -277,9 +304,22 @@ export function App() {
 
   // Auth Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setIsAuthReady(true);
+      
+      if (currentUser) {
+        // Load formatting settings from Firestore
+        try {
+          const userDoc = await onSnapshot(doc(db, 'users', currentUser.uid), (doc) => {
+            if (doc.exists() && doc.data().formattingSettings) {
+              setFormattingSettings(doc.data().formattingSettings);
+            }
+          });
+        } catch (error) {
+          console.error("Error loading settings:", error);
+        }
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -343,12 +383,10 @@ export function App() {
 
   const handleLogout = () => auth.signOut();
 
-  const handleContentChange = React.useCallback((content: string) => {
-    setActiveFileId(currentId => {
-      setFiles(prev => prev.map(f => f.id === currentId ? { ...f, content } : f));
-      return currentId;
-    });
-  }, []);
+  const handleContentChange = React.useCallback((content: any) => {
+    if (!activeFileId) return;
+    setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, content } : f));
+  }, [activeFileId]);
 
   const closeTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -422,12 +460,33 @@ export function App() {
     }
   };
 
+  const updateFormattingSettings = async (newSettings: FormattingSettings) => {
+    setFormattingSettings(newSettings);
+    if (user) {
+      try {
+        await setDoc(doc(db, 'users', user.uid), { formattingSettings: newSettings }, { merge: true });
+        showToast("Settings saved", "success");
+      } catch (error) {
+        showToast("Failed to save settings", "error");
+      }
+    }
+  };
+
   const handleGrammarFix = async () => {
     if (!activeFile || isCorrecting) return;
     setIsCorrecting(true);
     try {
-      const corrected = await correctGrammar(activeFile.content);
-      handleContentChange(corrected);
+      const contentStr = typeof activeFile.content === 'string' 
+        ? activeFile.content 
+        : serializeMarkdown(activeFile.content);
+        
+      const corrected = await correctGrammar(contentStr);
+      
+      if (typeof activeFile.content === 'string') {
+        handleContentChange(corrected);
+      } else {
+        handleContentChange(deserializeMarkdown(corrected));
+      }
       showToast("Grammar corrected!", "success");
     } catch (error) {
       showToast("Grammar check failed.", "error");
@@ -441,7 +500,13 @@ export function App() {
     setIsSaving(true);
     setLastSavedStatus('saving');
     try {
-      const updatedFile = { ...activeFile, lastSaved: Date.now() };
+      let contentToSave = activeFile.content;
+      // Always store as markdown string in Firestore to maintain compatibility
+      if (typeof contentToSave !== 'string') {
+        contentToSave = serializeMarkdown(contentToSave as Descendant[]);
+      }
+      
+      const updatedFile = { ...activeFile, content: contentToSave, lastSaved: Date.now() };
       await setDoc(doc(db, 'notes', activeFile.id), updatedFile);
       setLastSavedStatus('saved');
       setTimeout(() => setLastSavedStatus('idle'), 3000);
@@ -462,11 +527,14 @@ export function App() {
     }, 5000); // Auto-save after 5 seconds of inactivity
 
     return () => clearTimeout(timer);
-  }, [activeFile?.content]);
+  }, [activeFile?.content, user]);
 
   const downloadFile = () => {
     if (!activeFile) return;
-    const blob = new Blob([activeFile.content], { type: 'text/plain' });
+    const contentStr = typeof activeFile.content === 'string' 
+      ? activeFile.content 
+      : serializeMarkdown(activeFile.content);
+    const blob = new Blob([contentStr], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -498,45 +566,58 @@ export function App() {
 
   const handleFormatContent = () => {
     if (!activeFile) return;
-    
-    let formatted = activeFile.content
-      // Remove trailing whitespace from each line
-      .split('\n')
-      .map(line => line.trimEnd())
-      .join('\n')
-      // Remove excessive blank lines (more than 2)
-      .replace(/\n{3,}/g, '\n\n')
-      // Ensure single blank line between paragraphs
-      .trim();
-      
-    handleContentChange(formatted);
+    // Formatting for Slate isn't needed in the same way, but for markdown we can still do it
+    if (typeof activeFile.content === 'string') {
+      let formatted = activeFile.content
+        .split('\n')
+        .map(line => line.trimEnd())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      handleContentChange(formatted);
+    }
   };
 
   const handleFindReplace = (type: 'find' | 'replace' | 'replaceAll') => {
     if (!activeFile || !findText) return;
     
-    let content = activeFile.content;
+    // For Slate, we should ideally use Slate's search capability, 
+    // but for now we'll convert to string to maintain existing logic
+    let content = typeof activeFile.content === 'string' 
+      ? activeFile.content 
+      : serializeMarkdown(activeFile.content);
+      
     if (type === 'find') {
-      // Just highlight/scroll to next occurrence (simplified for now)
       const index = content.indexOf(findText);
       if (index !== -1 && editorRef.current) {
-        editorRef.current.focus();
-        editorRef.current.setSelectionRange(index, index + findText.length);
+        // This won't work perfectly for Slate elements but keeps the logic alive
+        // Real search in Slate would involve Transforms.select
+        showToast("Feature coming soon for rich text!", "info");
       }
     } else if (type === 'replace') {
       const index = content.indexOf(findText);
       if (index !== -1) {
         const newContent = content.substring(0, index) + replaceText + content.substring(index + findText.length);
-        handleContentChange(newContent);
+        if (typeof activeFile.content === 'string') {
+          handleContentChange(newContent);
+        } else {
+          handleContentChange(deserializeMarkdown(newContent));
+        }
       }
     } else if (type === 'replaceAll') {
       const newContent = content.split(findText).join(replaceText);
-      handleContentChange(newContent);
+      if (typeof activeFile.content === 'string') {
+        handleContentChange(newContent);
+      } else {
+        handleContentChange(deserializeMarkdown(newContent));
+      }
     }
   };
 
   const stats = useMemo(() => {
-    const text = activeFile?.content || '';
+    const text = typeof activeFile?.content === 'string' 
+      ? activeFile.content 
+      : serializeMarkdown(activeFile?.content || []);
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     const chars = text.length;
     return { words, chars };
@@ -900,45 +981,7 @@ export function App() {
             </div>
           </div>
 
-          {/* Editor Toolbar */}
-          <div className="flex items-center justify-between border-b border-slate-100 bg-white/40 px-2 md:px-4 py-1.5 md:py-2 backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-950/40 overflow-x-auto no-scrollbar scroll-smooth">
-            <div className="flex items-center gap-0.5 md:gap-1 min-w-max">
-              <ToolbarButton icon={<Bold size={16} />} title="Bold" onClick={() => insertMarkdown('**', '**')} />
-              <ToolbarButton icon={<Italic size={16} />} title="Italic" onClick={() => insertMarkdown('_', '_')} />
-              <ToolbarButton icon={<Underline size={16} />} title="Underline" onClick={() => insertMarkdown('<u>', '</u>')} />
-              <div className="mx-1 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
-              <ToolbarButton icon={<CheckSquare size={16} />} title="Checkbox List" onClick={() => insertMarkdown('\n- [ ] ')} />
-              <ToolbarButton icon={<List size={16} />} title="Toggle List" onClick={() => insertMarkdown('\n<details>\n<summary>Toggle Title</summary>\n\n- Item 1\n- Item 2\n\n</details>\n')} />
-            </div>
-            
-            <div className="flex items-center gap-1 md:gap-2 ml-4 min-w-max">
-              <button 
-                onClick={() => setIsPreviewMode(!isPreviewMode)}
-                className={`flex items-center gap-1.5 rounded-lg px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all ${
-                  isPreviewMode 
-                    ? 'bg-google-blue text-white shadow-md shadow-google-blue/20' 
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
-                }`}
-              >
-                {isPreviewMode ? <Edit3 size={14} /> : <Eye size={14} />}
-                <span className="hidden sm:inline">{isPreviewMode ? 'Edit' : 'Preview'}</span>
-              </button>
-              
-              {!isMobile && (
-                <button 
-                  onClick={() => setIsSplitView(!isSplitView)}
-                  className={`flex items-center gap-1.5 rounded-lg px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all ${
-                    isSplitView 
-                      ? 'bg-google-blue text-white shadow-md shadow-google-blue/20' 
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
-                  }`}
-                >
-                  <Maximize2 size={14} />
-                  <span className="hidden sm:inline">Split</span>
-                </button>
-              )}
-            </div>
-          </div>
+          {/* Old Editor Toolbar Removed - Now handled inside NoteEditor for Slate context */}
 
           {/* Find and Replace Panel */}
           {isFindReplaceOpen && (
@@ -984,43 +1027,21 @@ export function App() {
                 <p className="text-sm text-slate-400">Select a file from the sidebar or create a new one.</p>
               </div>
             ) : (
-              <div className={`flex h-full w-full ${isSplitView && !isMobile ? 'flex-row' : 'flex-col'}`}>
-                {(!isPreviewMode || (isSplitView && !isMobile)) && (
-                  <NoteEditor 
-                    initialContent={activeFile.content}
-                    onChange={handleContentChange}
-                    fontSize={editorFontSize}
-                    isSplitView={isSplitView && !isMobile}
-                  />
-                )}
-                {(isPreviewMode || (isSplitView && !isMobile)) && (
-                  <div className={`flex flex-col overflow-y-auto p-4 md:p-[15px] ${isSplitView && !isMobile ? 'w-1/2' : 'w-full'} relative group/preview`}>
-                    <div className="absolute right-6 top-6 opacity-0 group-hover/preview:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => {
-                          navigator.clipboard.writeText(activeFile.content);
-                          showToast("Copied to clipboard!", "success");
-                        }}
-                        className="flex h-8 items-center gap-2 rounded-lg bg-white/80 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-600 shadow-md backdrop-blur-md hover:bg-white dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-800 transition-all border border-slate-100 dark:border-slate-700"
-                        title="Copy Content"
-                      >
-                        <Save size={12} />
-                        Copy
-                      </button>
-                    </div>
-                    <div className="prose prose-sm md:prose-base prose-slate dark:prose-invert max-w-none animate-in fade-in slide-in-from-bottom-2 duration-300">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {activeFile.content || '*No content to preview*'}
-                      </ReactMarkdown>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+              <div className="flex h-full w-full">
+                <NoteEditor 
+                  initialContent={(activeFile.content as any)} 
+                  onChange={handleContentChange}
+                  fontSize={editorFontSize}
+                  activeFileId={activeFileId}
+                  handleGrammarFix={handleGrammarFix}
+                  isCorrecting={isCorrecting}
+                  showToast={showToast}
+                  formattingSettings={formattingSettings}
+                  onSettingsChange={updateFormattingSettings}
+                />
+              </div>            )}
           </div>
-
-          {/* Floating Bottom Actions Removed */}
-
+          
           {/* Footer Info */}
           <footer className="flex items-center justify-between border-t border-slate-100 bg-white/40 px-3 md:px-6 py-2 text-[10px] md:text-[11px] font-medium text-slate-400 backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-950/40">
             <div className="flex items-center gap-2 md:gap-4 font-mono text-[9px] md:text-[10px] tracking-wider uppercase">
@@ -1094,38 +1115,361 @@ export function App() {
   );
 }
 
-function NoteEditor({ initialContent, onChange, fontSize, isSplitView }: { initialContent: string, onChange: (val: string) => void, fontSize: number, isSplitView: boolean }) {
-  const [content, setContent] = useState(initialContent);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
-  const isEditing = useRef(false);
+const LIST_TYPES = ['numbered-list', 'bulleted-list']
+const TEXT_ALIGN_TYPES = ['left', 'center', 'right', 'justify']
 
-  // Sync with parent ONLY if we aren't editing locally
+const NoteEditor = ({ 
+  initialContent, 
+  onChange, 
+  fontSize, 
+  activeFileId,
+  handleGrammarFix,
+  isCorrecting,
+  showToast,
+  formattingSettings,
+  onSettingsChange
+}: { 
+  initialContent: string | Descendant[];
+  onChange: (val: Descendant[]) => void;
+  fontSize: number; 
+  activeFileId: string;
+  handleGrammarFix: () => void;
+  isCorrecting: boolean;
+  showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  formattingSettings: FormattingSettings;
+  onSettingsChange: (settings: FormattingSettings) => void;
+}) => {
+  const renderElement = React.useCallback((props: RenderElementProps) => <Element {...props} />, [])
+  const renderLeaf = React.useCallback((props: RenderLeafProps) => <Leaf {...props} />, [])
+  const editor = useMemo(() => withHistory(withReact(createEditor())), [])
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const handleFormat = () => {
+    const markdown = serializeMarkdown(editor.children);
+    const formatted = formatMarkdown(markdown, formattingSettings);
+    const newNodes = deserializeMarkdown(formatted);
+    
+    // Replace all nodes
+    Transforms.delete(editor, {
+      at: {
+        anchor: Editor.start(editor, []),
+        focus: Editor.end(editor, []),
+      },
+    });
+    Transforms.insertNodes(editor, newNodes);
+    showToast("File Formatted!", "success");
+  }
+
+  const [value, setValue] = useState<Descendant[]>(() => 
+    typeof initialContent === 'string' ? (initialContent ? deserializeMarkdown(initialContent) : getInitialSlateValue()) : (initialContent || getInitialSlateValue())
+  );
+
+  // Sync with parent when file changes
   useEffect(() => {
-    if (!isEditing.current) {
-      setContent(initialContent);
-    }
-  }, [initialContent]);
+    const newValue = typeof initialContent === 'string' ? (initialContent ? deserializeMarkdown(initialContent) : getInitialSlateValue()) : (initialContent || getInitialSlateValue());
+    setValue(newValue);
+    // Reset editor state
+    editor.children = newValue;
+    editor.onChange();
+  }, [activeFileId]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newVal = e.target.value;
-    setContent(newVal);
-    onChange(newVal);
-  };
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    for (const hotkey in HOTKEYS) {
+      if (isHotkey(hotkey, event as any)) {
+        event.preventDefault()
+        const mark = HOTKEYS[hotkey]
+        toggleMark(editor, mark)
+      }
+    }
+  }
 
   return (
-    <div className={`flex flex-col overflow-y-auto p-4 md:p-[15px] ${isSplitView ? 'w-1/2 border-r border-slate-100 dark:border-slate-800' : 'w-full'}`}>
-      <textarea 
-        ref={editorRef}
-        onFocus={() => { isEditing.current = true; }}
-        onBlur={() => { isEditing.current = false; }}
-        style={{ fontSize: `${fontSize}px` }}
-        className="editor-area h-full min-h-[500px] w-full resize-none border-none bg-transparent p-0 leading-relaxed text-slate-800 placeholder:text-slate-300 focus:ring-0 dark:text-slate-200 dark:placeholder:text-slate-700 font-mono" 
-        placeholder="Start typing your notes here..."
-        value={content}
-        onChange={handleChange}
-      />
+    <div className="flex flex-1 flex-col overflow-y-auto p-4 md:p-[20px] w-full">
+      <Slate 
+        editor={editor} 
+        initialValue={value}
+        onChange={val => {
+          setValue(val);
+          onChange(val);
+        }}
+      >
+        {/* Internal Toolbar for slate context */}
+        <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-2">
+          <div className="flex items-center gap-0.5 md:gap-1">
+            <MarkButton format="bold" icon={<Bold size={16} />} title="Bold (Ctrl+B)" />
+            <MarkButton format="italic" icon={<Italic size={16} />} title="Italic (Ctrl+I)" />
+            <MarkButton format="underline" icon={<Underline size={16} />} title="Underline (Ctrl+U)" />
+            <div className="mx-1 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
+            {/* Removed H1 and H2 as per user request */}
+            <BlockButton format="check-list-item" icon={<CheckSquare size={16} />} title="Check List" />
+            <BlockButton format="block-quote" icon={<Quote size={16} />} title="Blockquote" />
+            <div className="mx-1 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
+            <BlockButton format="bulleted-list" icon={<List size={16} />} title="Bulleted List" />
+            <BlockButton format="numbered-list" icon={<List size={16} className="rotate-180" />} title="Numbered List" />
+          </div>
+          
+          <div className="flex items-center gap-1">
+            <div className="relative">
+              <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
+                <button 
+                  onClick={handleFormat}
+                  className="flex items-center gap-1.5 px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700 transition-all border-r border-slate-200 dark:border-slate-700"
+                  title="Format Document"
+                >
+                  <WrapText size={14} />
+                  <span className="hidden sm:inline">Format</span>
+                </button>
+                <button 
+                  onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                  className={`flex items-center justify-center px-2 py-1 transition-all ${isSettingsOpen ? 'bg-google-blue text-white' : 'text-slate-400 hover:text-google-blue hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                  title="Formatting Settings"
+                >
+                  <Settings2 size={14} />
+                </button>
+              </div>
+
+              {/* Formatting Settings Dropdown */}
+              <AnimatePresence>
+                {isSettingsOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setIsSettingsOpen(false)} 
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 top-full mt-2 z-20 w-64 rounded-xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900 backdrop-blur-xl bg-white/90 dark:bg-slate-900/90"
+                    >
+                      <h4 className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Formatting Rules</h4>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400">List Marker</label>
+                          <select 
+                            value={formattingSettings.listMarker}
+                            onChange={(e) => onSettingsChange({...formattingSettings, listMarker: e.target.value as any})}
+                            className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          >
+                            <option value="-">Dash (-)</option>
+                            <option value="*">Asterisk (*)</option>
+                            <option value="+">Plus (+)</option>
+                          </select>
+                        </div>
+                        
+                        {[
+                          { id: 'collapseEmptyLines', label: 'Collapse Lines' },
+                          { id: 'spaceAfterHeading', label: 'Space after #' },
+                          { id: 'trimTrailingWhitespace', label: 'Trim Whitespace' }
+                        ].map((item) => (
+                          <div key={item.id} className="flex items-center justify-between">
+                            <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400">{item.label}</label>
+                            <button
+                              onClick={() => onSettingsChange({ ...formattingSettings, [item.id]: ! (formattingSettings as any)[item.id] })}
+                              className={`flex h-4 w-8 items-center rounded-full transition-colors ${
+                                (formattingSettings as any)[item.id] ? 'bg-google-blue' : 'bg-slate-300 dark:bg-slate-700'
+                              }`}
+                            >
+                              <div className={`h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${
+                                (formattingSettings as any)[item.id] ? 'translate-x-4.5' : 'translate-x-1'
+                              }`} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <button 
+              onClick={handleGrammarFix}
+              disabled={isCorrecting}
+              className="flex items-center gap-1.5 rounded-lg bg-google-blue/10 px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold uppercase tracking-wider text-google-blue hover:bg-google-blue/20 transition-all disabled:opacity-50"
+              title="Correct Grammar"
+            >
+              {isCorrecting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              <span className="hidden sm:inline">Grammar</span>
+            </button>
+          </div>
+        </div>
+
+        <Editable
+          renderElement={renderElement}
+          renderLeaf={renderLeaf}
+          placeholder="Start typing your masterpieces here..."
+          spellCheck
+          autoFocus
+          onKeyDown={onKeyDown}
+          style={{ fontSize: `${fontSize}px` }}
+          className="editor-area h-full min-h-[500px] w-full outline-none leading-relaxed text-slate-800 dark:text-slate-200 font-sans"
+        />
+      </Slate>
     </div>
   );
+}
+
+const HOTKEYS: Record<string, string> = {
+  'mod+b': 'bold',
+  'mod+i': 'italic',
+  'mod+u': 'underline',
+  'mod+`': 'code',
+}
+
+const toggleBlock = (editor: Editor, format: string) => {
+  const isActive = isBlockActive(
+    editor,
+    format,
+    TEXT_ALIGN_TYPES.includes(format) ? 'align' : 'type'
+  )
+  const isList = LIST_TYPES.includes(format)
+
+  Transforms.unwrapNodes(editor, {
+    match: n =>
+      !Editor.isEditor(n) &&
+      SlateElement.isElement(n) &&
+      LIST_TYPES.includes((n as any).type) &&
+      !TEXT_ALIGN_TYPES.includes(format),
+    split: true,
+  })
+
+  let newProperties: Partial<SlateElement>
+  if (TEXT_ALIGN_TYPES.includes(format)) {
+    newProperties = {
+      align: isActive ? undefined : format,
+    } as any
+  } else {
+    newProperties = {
+      type: isActive ? 'paragraph' : isList ? 'list-item' : format,
+    } as any
+  }
+  if (newProperties.type === 'check-list-item') {
+    (newProperties as any).checked = false;
+  }
+  Transforms.setNodes<SlateElement>(editor, newProperties)
+
+  if (!isActive && isList) {
+    const block = { type: format, children: [] }
+    Transforms.wrapNodes(editor, block as any)
+  }
+}
+
+const toggleMark = (editor: Editor, format: string) => {
+  const isActive = isMarkActive(editor, format)
+
+  if (isActive) {
+    Editor.removeMark(editor, format)
+  } else {
+    Editor.addMark(editor, format, true)
+  }
+}
+
+const isBlockActive = (editor: Editor, format: string, blockType = 'type') => {
+  const { selection } = editor
+  if (!selection) return false
+
+  const [match] = Array.from(
+    Editor.nodes(editor, {
+      at: Editor.unhangRange(editor, selection),
+      match: n =>
+        !Editor.isEditor(n) &&
+        SlateElement.isElement(n) &&
+        (n as any)[blockType] === format,
+    })
+  )
+
+  return !!match
+}
+
+const isMarkActive = (editor: Editor, format: string) => {
+  const marks = Editor.marks(editor)
+  return marks ? (marks as any)[format] === true : false
+}
+
+const Element = (props: RenderElementProps) => {
+  const { attributes, children, element } = props
+  const style = { textAlign: (element as any).align }
+  const editor = useSlateStatic()
+
+  switch ((element as any).type) {
+    case 'block-quote':
+      return (
+        <blockquote style={style} {...attributes} className="border-l-4 border-slate-200 pl-4 italic my-4 dark:border-slate-700">
+          {children}
+        </blockquote>
+      )
+    case 'bulleted-list':
+      return (
+        <ul style={style} {...attributes} className="list-disc list-inside my-4 text-slate-700 dark:text-slate-300">
+          {children}
+        </ul>
+      )
+    case 'list-item':
+      return (
+        <li style={style} {...attributes}>
+          {children}
+        </li>
+      )
+    case 'numbered-list':
+      return (
+        <ol style={style} {...attributes} className="list-decimal list-inside my-4">
+          {children}
+        </ol>
+      )
+    case 'check-list-item':
+      const checked = (element as any).checked
+      return (
+        <div {...attributes} className="flex flex-row items-center my-1">
+          <span contentEditable={false} className="mr-2 select-none">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={event => {
+                const path = ReactEditor.findPath(editor, element)
+                const newProperties: Partial<SlateElement> = {
+                  checked: event.target.checked,
+                }
+                Transforms.setNodes<SlateElement>(editor, newProperties, { at: path })
+              }}
+              className="h-4 w-4 rounded border-slate-300 text-google-blue focus:ring-google-blue cursor-pointer"
+            />
+          </span>
+          <span
+            style={{ textDecoration: checked ? 'line-through' : 'none' }}
+            className={`flex-1 ${checked ? 'opacity-50 italic' : ''}`}
+          >
+            {children}
+          </span>
+        </div>
+      )
+    default:
+      return (
+        <p style={style} {...attributes} className="my-2">
+          {children}
+        </p>
+      )
+  }
+}
+
+const Leaf = ({ attributes, children, leaf }: RenderLeafProps) => {
+  if (leaf.bold) {
+    children = <strong>{children}</strong>
+  }
+
+  if (leaf.code) {
+    children = <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{children}</code>
+  }
+
+  if (leaf.italic) {
+    children = <em>{children}</em>
+  }
+
+  if (leaf.underline) {
+    children = <u>{children}</u>
+  }
+
+  return <span {...attributes}>{children}</span>
 }
 
 function BrandIcon({ size = 24, className = "" }: { size?: number; className?: string }) {
@@ -1140,14 +1484,53 @@ function BrandIcon({ size = 24, className = "" }: { size?: number; className?: s
   );
 }
 
-function ToolbarButton({ icon, title, onClick }: { icon: React.ReactNode; title: string; onClick?: () => void }) {
+function ToolbarButton({ icon, title, onClick, active, onPointerDown }: { icon: React.ReactNode; title: string; onClick?: () => void; active?: boolean; onPointerDown?: (e: any) => void }) {
   return (
     <button 
       onClick={onClick}
-      className="flex h-8 w-8 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-all duration-200" 
+      onPointerDown={onPointerDown}
+      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200 ${
+        active 
+          ? 'bg-google-blue text-white shadow-sm' 
+          : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+      }`} 
       title={title}
     >
       {icon}
     </button>
   );
+}
+
+const MarkButton = ({ format, icon, title }: { format: string; icon: React.ReactNode; title: string }) => {
+  const editor = useSlate()
+  return (
+    <ToolbarButton
+      active={isMarkActive(editor, format)}
+      icon={icon}
+      title={title}
+      onPointerDown={event => {
+        event.preventDefault()
+        toggleMark(editor, format)
+      }}
+    />
+  )
+}
+
+const BlockButton = ({ format, icon, title }: { format: string; icon: React.ReactNode; title: string }) => {
+  const editor = useSlate()
+  return (
+    <ToolbarButton
+      active={isBlockActive(
+        editor,
+        format,
+        TEXT_ALIGN_TYPES.includes(format) ? 'align' : 'type'
+      )}
+      icon={icon}
+      title={title}
+      onPointerDown={event => {
+        event.preventDefault()
+        toggleBlock(editor, format)
+      }}
+    />
+  )
 }
