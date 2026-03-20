@@ -15,12 +15,12 @@ export const getInitialSlateValue = (): Descendant[] => [
   },
 ];
 
-// Simple Markdown to Slate Deserializer (basic)
+// Simple Markdown to Slate Deserializer (with list grouping)
 export const deserializeMarkdown = (markdown: string): Descendant[] => {
   if (!markdown) return getInitialSlateValue();
   
   const lines = markdown.split('\n');
-  const nodes: Descendant[] = lines
+  const rawNodes: Descendant[] = lines
     .filter(line => line.trim() !== '')
     .map(line => {
       const trimmed = line.trim();
@@ -35,21 +35,38 @@ export const deserializeMarkdown = (markdown: string): Descendant[] => {
         };
       }
 
-      // Check for bulleted lists: - or *
-      const bulletMatch = trimmed.match(/^[*-]\s(.*)/);
+      // Check for numbered lists: 1. text
+      const numberedMatch = trimmed.match(/^\d+\.\s(.*)/);
+      if (numberedMatch) {
+        return {
+          type: 'list-item',
+          listType: 'numbered-list',
+          children: [{ text: numberedMatch[1] }],
+        };
+      }
+
+      // Check for bulleted lists: - or * or +
+      const bulletMatch = trimmed.match(/^[-*+]\s(.*)/);
       if (bulletMatch) {
         return {
           type: 'list-item',
+          listType: 'bulleted-list',
           children: [{ text: bulletMatch[1] }],
         };
       }
 
-      // Check for headers
-      if (trimmed.startsWith('# ')) {
-        return { type: 'heading-one', children: [{ text: trimmed.slice(2) }] };
+      // Check for blockquotes
+      const quoteMatch = trimmed.match(/^>\s?(.*)/);
+      if (quoteMatch) {
+        return { type: 'block-quote', children: [{ text: quoteMatch[1] }] };
       }
+
+      // Check for headers
       if (trimmed.startsWith('## ')) {
         return { type: 'heading-two', children: [{ text: trimmed.slice(3) }] };
+      }
+      if (trimmed.startsWith('# ')) {
+        return { type: 'heading-one', children: [{ text: trimmed.slice(2) }] };
       }
 
       return {
@@ -57,23 +74,69 @@ export const deserializeMarkdown = (markdown: string): Descendant[] => {
         children: [{ text: line }],
       };
     });
+  
+  // Group consecutive list-items into their wrapper elements
+  const grouped: Descendant[] = [];
+  let i = 0;
+  while (i < rawNodes.length) {
+    const node = rawNodes[i] as any;
     
-  return nodes.length > 0 ? nodes : initialSlateValue;
+    if (node.type === 'list-item' && node.listType) {
+      const wrapperType = node.listType;
+      const items: Descendant[] = [];
+      
+      while (i < rawNodes.length && (rawNodes[i] as any).type === 'list-item' && (rawNodes[i] as any).listType === wrapperType) {
+        const item = rawNodes[i] as any;
+        delete item.listType; // clean up temp property
+        items.push(item);
+        i++;
+      }
+      
+      grouped.push({
+        type: wrapperType,
+        children: items,
+      } as any);
+    } else {
+      grouped.push(node);
+      i++;
+    }
+  }
+    
+  return grouped.length > 0 ? grouped : initialSlateValue;
 }
 
-// Simple Slate to Markdown Serializer
+// Recursive Slate to Markdown Serializer
 export const serializeMarkdown = (nodes: Descendant[]): string => {
   return nodes
     .map(n => {
       if (SlateElement.isElement(n)) {
-        const children = n.children.map(c => serializeLeaf(c)).join('');
-        switch (n.type as string) {
+        const type = n.type as string;
+        
+        // For wrapper elements (bulleted-list, numbered-list), serialize children (list-items)
+        if (type === 'bulleted-list') {
+          return (n.children as Descendant[])
+            .map(child => {
+              const text = serializeNode(child);
+              return `- ${text}\n`;
+            })
+            .join('');
+        }
+        if (type === 'numbered-list') {
+          return (n.children as Descendant[])
+            .map((child, idx) => {
+              const text = serializeNode(child);
+              return `${idx + 1}. ${text}\n`;
+            })
+            .join('');
+        }
+        
+        // For leaf-level elements, serialize inline content
+        const children = serializeInlineContent(n.children);
+        switch (type) {
           case 'heading-one': return `# ${children}\n`;
           case 'heading-two': return `## ${children}\n`;
           case 'block-quote': return `> ${children}\n`;
-          case 'bulleted-list': return `* ${children}\n`;
-          case 'numbered-list': return `1. ${children}\n`;
-          case 'list-item': return `  - ${children}\n`;
+          case 'list-item': return `- ${children}\n`;
           case 'check-list-item': return `- [${(n as any).checked ? 'x' : ' '}] ${children}\n`;
           default: return `${children}\n`;
         }
@@ -81,6 +144,26 @@ export const serializeMarkdown = (nodes: Descendant[]): string => {
       return '';
     })
     .join('');
+}
+
+// Serialize a single node (could be element or text)
+const serializeNode = (node: Descendant): string => {
+  if (Text.isText(node)) {
+    return serializeLeaf(node);
+  }
+  if (SlateElement.isElement(node)) {
+    return serializeInlineContent(node.children);
+  }
+  return '';
+}
+
+// Serialize inline children (mix of text leaves with marks)
+const serializeInlineContent = (children: Descendant[]): string => {
+  return children.map(c => {
+    if (Text.isText(c)) return serializeLeaf(c);
+    if (SlateElement.isElement(c)) return serializeInlineContent(c.children);
+    return '';
+  }).join('');
 }
 
 export interface FormattingSettings {
