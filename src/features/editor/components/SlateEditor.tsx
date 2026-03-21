@@ -183,7 +183,7 @@ function ToolbarButton({ icon, title, onClick, active, onPointerDown, className 
         onClick={onClick}
         onPointerDown={onPointerDown}
         className={`flex h-[34px] w-[34px] items-center justify-center rounded-[10px] transition-all duration-200 ${
-          active ? 'bg-[#4285F4] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+          active ? 'text-[#4285F4] dark:text-[#4285F4]' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
         } ${className}`} 
       >
         {icon}
@@ -542,7 +542,7 @@ export function SlateEditor({
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto p-4 md:p-[20px] w-full">
+    <div className="flex flex-1 flex-col overflow-hidden w-full">
       <Slate
         editor={editor}
         initialValue={value}
@@ -564,7 +564,8 @@ export function SlateEditor({
           }
         }}
       >
-        <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-2">
+        {/* Toolbar - fixed, never scrolls */}
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-4 md:px-[20px] py-2 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm overflow-x-clip">
           <div className="flex items-center gap-0.5 md:gap-1">
             <MarkButton format="bold" icon={<Bold size={16} />} title="Bold (Ctrl+B)" />
             <MarkButton format="italic" icon={<Italic size={16} />} title="Italic (Ctrl+I)" />
@@ -636,17 +637,20 @@ export function SlateEditor({
           </div>
         </div>
 
-        <Editable
-          renderElement={renderElement}
-          renderLeaf={renderLeaf}
-          decorate={decorate}
-          placeholder="Start typing your masterpieces here..."
-          spellCheck
-          autoFocus
-          onKeyDown={onKeyDown}
-          style={{ fontSize: `${fontSize}px` }}
-          className="editor-area h-full min-h-[500px] w-full outline-none leading-relaxed text-slate-800 dark:text-slate-200 font-sans"
-        />
+        {/* Scrollable editor content */}
+        <div className="flex-1 overflow-y-auto overflow-x-clip p-4 md:p-[20px]">
+          <Editable
+            renderElement={renderElement}
+            renderLeaf={renderLeaf}
+            decorate={decorate}
+            placeholder="Start typing your masterpieces here..."
+            spellCheck
+            autoFocus
+            onKeyDown={onKeyDown}
+            style={{ fontSize: `${fontSize}px` }}
+            className="editor-area h-full min-h-[500px] w-full outline-none leading-relaxed text-slate-800 dark:text-slate-200 font-sans"
+          />
+        </div>
 
         {activeGrammarMatch && (
           <div
