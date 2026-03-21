@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from 'features/theme';
 import { Sun, Moon } from 'lucide-react';
 import { BrandIcon } from 'components/BrandIcon';
+import { Branding } from 'components/Branding';
+import { Tooltip } from 'components/Tooltip';
 
 export function LoginPageLayout() {
   const { login } = useAuth();
@@ -11,16 +13,17 @@ export function LoginPageLayout() {
   return (
     <div className="flex h-screen w-full flex-col items-center justify-center bg-background-light p-6 dark:bg-background-dark relative overflow-hidden">
       <div className="fixed top-2 right-2 md:top-6 md:right-6 z-50">
-        <button
-          onClick={() => setIsDarkMode(!isDarkMode)}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/50 text-slate-600 shadow-xl backdrop-blur-md hover:bg-white dark:bg-slate-800/50 dark:text-slate-400 dark:hover:bg-slate-800 transition-all duration-200 border border-slate-100 dark:border-slate-800"
-          title="Toggle Dark Mode"
-        >
-          {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-        </button>
+        <Tooltip title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"} position="bottom">
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/50 text-slate-600 shadow-xl backdrop-blur-md hover:bg-white dark:bg-slate-800/50 dark:text-slate-400 dark:hover:bg-slate-800 transition-all duration-200 border border-slate-100 dark:border-slate-800"
+          >
+            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+        </Tooltip>
       </div>
 
-      <div className="absolute inset-0 z-0 opacity-10 dark:opacity-20">
+      <div className="absolute inset-0 z-0 opacity-5">
         <h1 className="absolute -left-10 sm:-left-20 top-0 text-[40vw] sm:text-[30vw] font-black uppercase leading-none tracking-tighter text-slate-900 dark:text-white">
           LASUN
         </h1>
@@ -57,14 +60,7 @@ export function LoginPageLayout() {
         </button>
       </div>
 
-      <div className="fixed bottom-6 left-6 z-50 flex flex-col items-start gap-1">
-        <p className="text-[10px] font-bold tracking-widest text-slate-400 uppercase opacity-60">
-          © All Rights Reserved by Lasunfry
-        </p>
-        <p className="text-[9px] font-medium text-slate-400 opacity-50">
-          Designed and Developed by Coddynet infotech
-        </p>
-      </div>
+      <Branding />
     </div>
   );
 }

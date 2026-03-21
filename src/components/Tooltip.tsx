@@ -1,121 +1,167 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface TooltipProps {
-  content: string;
+  title: string;
   children: React.ReactNode;
   position?: 'top' | 'bottom' | 'left' | 'right';
-  className?: string;
   delay?: number;
   variant?: 'default' | 'error';
   forceShow?: boolean;
 }
 
-export function Tooltip({ content, children, position = 'bottom', className = '', delay = 0, variant = 'default', forceShow = false }: TooltipProps) {
-  const [isHovered, setIsHovered] = useState(false);
-  const show = isHovered || forceShow;
-  const wrapperRef = useRef<HTMLDivElement>(null);
+export function Tooltip({ 
+  title, 
+  content,
+  children, 
+  position = 'top', 
+  delay = 0,
+  variant = 'default',
+  forceShow = false
+}: TooltipProps & { content?: string }) {
+  const displayTitle = title || content;
+  const [isVisible, setIsVisible] = useState(false);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const [offset, setOffset] = useState(0);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const show = isVisible || forceShow;
 
   useEffect(() => {
-    if (show && wrapperRef.current && tooltipRef.current) {
+    if (show && tooltipRef.current && triggerRef.current) {
       const tooltipRect = tooltipRef.current.getBoundingClientRect();
-      const parent = wrapperRef.current.closest('.overflow-hidden, .overflow-auto, .overflow-x-hidden');
-      const padding = 8;
+      const triggerRect = triggerRef.current.getBoundingClientRect();
       
-      let boundLeft = padding;
-      let boundRight = window.innerWidth - padding;
+      // Find the nearest overflow-restricted parent (e.g., the Sidebar or Main container)
+      let parent = triggerRef.current.parentElement;
+      let boundary = { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
+      
+      while (parent) {
+        const style = window.getComputedStyle(parent);
+        if (style.overflow !== 'visible' || style.overflowX !== 'visible' || style.overflowY !== 'visible') {
+          const rect = parent.getBoundingClientRect();
+          boundary = rect;
+          break;
+        }
+        parent = parent.parentElement;
+      }
 
-      if (parent) {
-        const parentRect = parent.getBoundingClientRect();
-        boundLeft = Math.max(padding, parentRect.left + padding);
-        boundRight = Math.min(window.innerWidth - padding, parentRect.right - padding);
+      let newOffsetX = 0;
+      let newOffsetY = 0;
+
+      // Vertical positions (top/bottom)
+      if (position === 'top' || position === 'bottom') {
+        const tooltipCenterX = triggerRect.left + triggerRect.width / 2;
+        const halfWidth = tooltipRect.width / 2;
+        
+        const leftEdge = tooltipCenterX - halfWidth;
+        const rightEdge = tooltipCenterX + halfWidth;
+
+        if (leftEdge < boundary.left + 12) {
+          newOffsetX = (boundary.left + 12) - leftEdge;
+        } else if (rightEdge > boundary.right - 12) {
+          newOffsetX = (boundary.right - 12) - rightEdge;
+        }
       }
-      
-      let newOffset = 0;
-      if (tooltipRect.left < boundLeft) {
-        newOffset = boundLeft - tooltipRect.left;
-      } else if (tooltipRect.right > boundRight) {
-        newOffset = boundRight - tooltipRect.right;
-      }
-      
-      setOffset(prev => prev + newOffset);
-    } else if (!show) {
-      setOffset(0);
+
+      setOffset({ x: newOffsetX, y: newOffsetY });
     }
-  }, [show]);
+  }, [show, position]);
 
-  let positionClass = '';
-  let arrowClass = '';
-  let initialAnim = {};
-  let exitAnim = {};
+  const handleMouseEnter = () => {
+    timeoutRef.current = setTimeout(() => setIsVisible(true), delay);
+  };
 
-  switch (position) {
-    case 'bottom':
-      positionClass = 'top-full left-1/2 -translate-x-1/2 mt-[9px]';
-      arrowClass = `bottom-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-transparent ${variant === 'error' ? 'border-b-[#FF3B30]' : 'border-b-[#1C1C1E] dark:border-b-[#F2F2F7]'}`;
-      initialAnim = { opacity: 0, y: 3, scale: 0.95 };
-      exitAnim = { opacity: 0, y: 3, scale: 0.95 };
-      break;
-    case 'top':
-      positionClass = 'bottom-full left-1/2 -translate-x-1/2 mb-[9px]';
-      arrowClass = `top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-transparent ${variant === 'error' ? 'border-t-[#FF3B30]' : 'border-t-[#1C1C1E] dark:border-t-[#F2F2F7]'}`;
-      initialAnim = { opacity: 0, y: -3, scale: 0.95 };
-      exitAnim = { opacity: 0, y: -3, scale: 0.95 };
-      break;
-    case 'left':
-      positionClass = 'right-full top-1/2 -translate-y-1/2 mr-[9px]';
-      arrowClass = `left-full top-1/2 -translate-y-1/2 w-0 h-0 border-t-[6px] border-b-[6px] border-l-[6px] border-transparent ${variant === 'error' ? 'border-l-[#FF3B30]' : 'border-l-[#1C1C1E] dark:border-l-[#F2F2F7]'}`;
-      initialAnim = { opacity: 0, x: -3, scale: 0.95 };
-      exitAnim = { opacity: 0, x: -3, scale: 0.95 };
-      break;
-    case 'right':
-      positionClass = 'left-full top-1/2 -translate-y-1/2 ml-[9px]';
-      arrowClass = `right-full top-1/2 -translate-y-1/2 w-0 h-0 border-t-[6px] border-b-[6px] border-r-[6px] border-transparent ${variant === 'error' ? 'border-r-[#FF3B30]' : 'border-r-[#1C1C1E] dark:border-r-[#F2F2F7]'}`;
-      initialAnim = { opacity: 0, x: 3, scale: 0.95 };
-      exitAnim = { opacity: 0, x: 3, scale: 0.95 };
-      break;
-  }
+  const handleMouseLeave = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setIsVisible(false);
+  };
+
+  const positionClass = {
+    top: 'bottom-full left-1/2 -translate-x-1/2 mb-2',
+    bottom: 'top-full left-1/2 -translate-x-1/2 mt-2',
+    left: 'right-full top-1/2 -translate-y-1/2 mr-2',
+    right: 'left-full top-1/2 -translate-y-1/2 ml-2'
+  }[position];
+
+  const arrowClass = {
+    top: `bottom-[-4px] left-1/2 -translate-x-1/2 border-t-[4px] ${variant === 'error' ? 'border-t-red-500' : 'border-t-slate-900 dark:border-t-slate-800'}`,
+    bottom: `top-[-4px] left-1/2 -translate-x-1/2 border-b-[4px] ${variant === 'error' ? 'border-b-red-500' : 'border-b-slate-900 dark:border-b-slate-800'}`,
+    left: `right-[-4px] top-1/2 -translate-y-1/2 border-l-[4px] ${variant === 'error' ? 'border-l-red-500' : 'border-l-slate-900 dark:border-l-slate-800'}`,
+    right: `left-[-4px] top-1/2 -translate-y-1/2 border-r-[4px] ${variant === 'error' ? 'border-r-red-500' : 'border-r-slate-900 dark:border-r-slate-800'}`
+  }[position];
 
   return (
     <div 
-      ref={wrapperRef}
-      className={`relative inline-flex items-center justify-center ${className}`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onFocus={() => setIsHovered(true)}
-      onBlur={() => setIsHovered(false)}
+      ref={triggerRef}
+      className="relative flex items-center" 
+      onMouseEnter={handleMouseEnter} 
+      onMouseLeave={handleMouseLeave}
     >
       {children}
       <AnimatePresence>
-        {show && content && (
+        {show && (
           <motion.div
             ref={tooltipRef}
-            key="tooltip"
-            initial={initialAnim as any}
+            initial={{ opacity: 0, scale: 0.95, y: position === 'top' ? 4 : -4 }}
             animate={{ 
               opacity: 1, 
-              x: (position === 'top' || position === 'bottom') ? offset : 0, 
-              y: 0, 
-              scale: 1 
+              scale: 1, 
+              y: 0,
+              x: offset.x 
             }}
-            exit={exitAnim as any}
-            transition={{ duration: 0.15, ease: "easeOut", delay: delay }}
-            className={`absolute ${positionClass} min-w-max z-[100] px-3.5 py-1.5 ${variant === 'error' ? 'bg-[#FF3B30] text-white shadow-[0_4px_16px_rgba(255,59,48,0.25)]' : 'bg-[#1C1C1E] dark:bg-[#F2F2F7] text-[#F2F2F7] dark:text-[#1C1C1E] shadow-[0_4px_16px_rgba(0,0,0,0.12)]'} text-[12px] font-medium tracking-[0.01em] rounded-[8px] whitespace-nowrap pointer-events-none`}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.1, ease: 'easeOut' }}
+            className={`absolute z-[100] whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-bold shadow-2xl pointer-events-none ${positionClass} ${
+              variant === 'error' 
+                ? 'bg-red-500 text-white' 
+                : 'bg-slate-900 text-white dark:bg-slate-800'
+            }`}
           >
-            {content}
-            <div 
-              className={`absolute ${arrowClass}`} 
-              style={{ 
-                transform: (position === 'top' || position === 'bottom') 
-                  ? `translateX(calc(-50% - ${offset}px))` 
-                  : undefined 
-              }}
-            />
+             {displayTitle}
+            <div className={`absolute border-l-[4px] border-r-[4px] border-transparent ${arrowClass}`} style={{ transform: `translateX(${-offset.x}px) translate(-50%, ${position === 'top' ? '0' : '0'})` }} />
           </motion.div>
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+interface ToolbarButtonProps {
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  active?: boolean;
+  className?: string;
+  variant?: 'default' | 'error';
+  forceShow?: boolean;
+}
+
+export function ToolbarButton({ 
+  onClick, 
+  icon, 
+  label, 
+  active = false, 
+  className = "",
+  variant = 'default',
+  forceShow = false
+}: ToolbarButtonProps) {
+  return (
+    <Tooltip title={label} variant={variant} forceShow={forceShow}>
+      <button
+        onClick={onClick}
+        onMouseDown={(e) => e.preventDefault()}
+        className={`flex h-[34px] w-[34px] items-center justify-center rounded-lg transition-all duration-200 ${
+          active
+            ? 'bg-google-blue text-white shadow-lg shadow-google-blue/20'
+            : variant === 'error'
+              ? 'bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/40'
+              : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+        } ${className}`}
+      >
+        {icon}
+      </button>
+    </Tooltip>
   );
 }

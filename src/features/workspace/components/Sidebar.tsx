@@ -67,7 +67,7 @@ export function Sidebar({
               <div className="flex items-center justify-between px-2 pt-2">
                 <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Workspace</p>
                 <div className="flex items-center gap-1">
-                  <Tooltip content="New File" position="top">
+                  <Tooltip title="New File" position="top">
                     <button
                       onClick={handleCreateFile}
                       className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-google-blue shadow-sm hover:shadow-md hover:bg-slate-50 transition-all duration-200 dark:bg-slate-800 dark:hover:bg-slate-700"

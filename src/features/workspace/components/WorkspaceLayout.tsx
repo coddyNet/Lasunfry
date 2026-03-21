@@ -5,15 +5,16 @@ import { TopNav } from '../components/TopNav';
 import { Sidebar } from '../components/Sidebar';
 import { TabBar } from '../components/TabBar';
 import { SlateEditor } from 'features/editor';
-import { FileText, Plus, X, History, Edit3, Trash2, Sparkles } from 'lucide-react';
+import { FileText, Plus, X, History, Sparkles } from 'lucide-react';
+import { Branding } from 'components/Branding';
 import { motion, AnimatePresence } from 'motion/react';
 import { serializeMarkdown } from 'features/editor';
 import { Descendant } from 'slate';
 
 export function WorkspaceLayout() {
   const { 
-    files, setFiles, activeFileId, activeFile, isSaving, lastSavedStatus, 
-    handleSave, openFiles, executeDelete, showToast, toasts, downloadFile 
+    files, setFiles, activeFileId, activeFile, 
+    handleSave, showToast, toasts, downloadFile, executeDelete, lastSavedStatus
   } = useFile();
   const { formattingSettings, updateFormattingSettings, editorFontSize } = useTheme();
 
@@ -21,9 +22,6 @@ export function WorkspaceLayout() {
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [isFindReplaceOpen, setIsFindReplaceOpen] = useState(false);
-  const [findText, setFindText] = useState('');
-  const [replaceText, setReplaceText] = useState('');
   
   const [editingFileId, setEditingFileId] = useState<{ id: string; location: 'sidebar' | 'tab' } | null>(null);
   const [editingFileName, setEditingFileName] = useState('');
@@ -101,7 +99,7 @@ export function WorkspaceLayout() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeFile]);
+  }, [activeFile, handleSave]);
 
   const stats = useMemo(() => {
     const text = typeof activeFile?.content === 'string'
@@ -111,17 +109,6 @@ export function WorkspaceLayout() {
     const chars = text.length;
     return { words, chars };
   }, [activeFile]);
-
-  const submitRename = async () => {
-    if (!editingFileId || !editingFileName.trim()) {
-      setEditingFileId(null);
-      isRenamingRef.current = false;
-      return;
-    }
-    const { handleRename } = useFile(); // wait, useFile cannot be called in here!
-    // Oops, I can get it from the context at top level.
-    // I didn't get handleRename initially. Let me just get it now.
-  };
 
   const { handleRename } = useFile();
 
@@ -227,6 +214,7 @@ export function WorkspaceLayout() {
                     setFiles(prev => prev.map(f =>
                       f.id === activeFile.id ? { ...f, content: newContent } : f
                     ));
+                    handleSave();
                   }}
                   fontSize={editorFontSize}
                   activeFileId={activeFile.id}
@@ -270,7 +258,7 @@ export function WorkspaceLayout() {
                 <span className="hidden xs:inline">SYNC:</span>
                 {activeFile?.lastSaved
                   ? `${new Date(activeFile.lastSaved).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} ${new Date(activeFile.lastSaved).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                  : 'NULL'}
+                  : '—'}
               </span>
               <span className="hidden sm:inline mx-1 md:mx-2 h-3 w-px bg-slate-200 dark:bg-slate-800"></span>
               <span className="hidden sm:inline flex items-center gap-1 font-mono text-[9px] md:text-[10px]">
@@ -284,46 +272,7 @@ export function WorkspaceLayout() {
         </main>
       </div>
 
-      {contextMenu && (
-        <div
-          className="fixed z-[100] w-40 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onClick={(e) => e.stopPropagation()}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <button
-            onClick={(e) => {
-              const file = files.find(f => f.id === contextMenu.fileId);
-              setContextMenu(null);
-              if (file) startRenaming(file, e, 'sidebar');
-            }}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-google-blue dark:text-slate-300 dark:hover:bg-slate-800 transition-colors"
-          >
-            <Edit3 size={14} />
-            Rename
-          </button>
-          <button
-            onClick={(e) => {
-              setContextMenu(null);
-              setConfirmDeleteId(contextMenu.fileId);
-            }}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-          >
-            <Trash2 size={14} />
-            Delete
-          </button>
-        </div>
-      )}
-
-      {/* Fixed Branding on Bottom Left - Authenticated View */}
-      <div className="fixed bottom-12 left-6 z-50 flex flex-col items-start gap-1 pointer-events-none">
-        <p className="text-[10px] font-bold tracking-widest text-slate-400 uppercase opacity-60">
-          © All Rights Reserved by Lasunfry
-        </p>
-        <p className="text-[9px] font-medium text-slate-400 opacity-50">
-          Designed and Developed by Coddynet infotech
-        </p>
-      </div>
+      <Branding />
 
       <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2">
         <AnimatePresence>
