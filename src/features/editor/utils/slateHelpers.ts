@@ -15,6 +15,66 @@ export const getInitialSlateValue = (): Descendant[] => [
   },
 ];
 
+// Helper to parse inline markdown into Slate Text nodes
+export const parseInlineMarkdown = (text: string): Text[] => {
+  let nodes: any[] = [{ text }];
+
+  const applyRegex = (regex: RegExp, markOrMarks: string | string[]) => {
+    const nextNodes: any[] = [];
+    const marks = Array.isArray(markOrMarks) ? markOrMarks : [markOrMarks];
+    
+    nodes.forEach(node => {
+      // Don't parse inside code blocks, but ALLOW nesting of other marks
+      if (node.code || marks.every(m => node[m])) { 
+        nextNodes.push(node);
+        return;
+      }
+      
+      let lastIndex = 0;
+      const text = node.text;
+      const matches = Array.from(text.matchAll(regex));
+
+      if (matches.length === 0) {
+        nextNodes.push(node);
+        return;
+      }
+
+      matches.forEach((match: any) => {
+        // Text before the match
+        const before = text.slice(lastIndex, match.index);
+        if (before) nextNodes.push({ ...node, text: before });
+        
+        // The content is expected in the last capturing group for balanced markers
+        const content = match[match.length - 1]; 
+        const newNode = { ...node, text: content };
+        marks.forEach(m => { (newNode as any)[m] = true; });
+        nextNodes.push(newNode);
+        
+        lastIndex = match.index! + match[0].length;
+      });
+      
+      // Text after the last match
+      const after = text.slice(lastIndex);
+      if (after) nextNodes.push({ ...node, text: after });
+    });
+    nodes = nextNodes;
+  };
+
+  // Improved regexes for robust inline parsing
+  // Order is CRITICAL: Longest/Outer markers must be processed before inner ones
+  // otherwise inner markers split the text nodes and prevent outer ones from matching.
+  applyRegex(/~~(.*?)~~/g, 'strikethrough');
+  applyRegex(/\+\+(.*?)\+\+/g, 'underline');
+  applyRegex(/`(.*?)`/g, 'code');
+  applyRegex(/(\*\*\*|___)(.*?)\1/g, ['bold', 'italic']);
+  applyRegex(/(\*\*|__)(.*?)\1/g, 'bold');
+  applyRegex(/(\*|_)(.*?)\1/g, 'italic');
+
+  // If we ended up with nothing (empty string), return a single empty text node
+  if (nodes.length === 0) return [{ text: '' }];
+  return nodes;
+};
+
 // Simple Markdown to Slate Deserializer (with list grouping)
 export const deserializeMarkdown = (markdown: string): Descendant[] => {
   if (!markdown) return getInitialSlateValue();
@@ -26,52 +86,52 @@ export const deserializeMarkdown = (markdown: string): Descendant[] => {
       const trimmed = line.trim();
       
       // Check for task lists: - [ ] or - [x]
-      const taskMatch = trimmed.match(/^-\s\[(x|\s)\]\s(.*)/i);
+      const taskMatch = trimmed.match(/^[-*+]\s?\[(x|\s)\]\s?(.*)/i);
       if (taskMatch) {
         return {
           type: 'check-list-item',
           checked: taskMatch[1].toLowerCase() === 'x',
-          children: [{ text: taskMatch[2] }],
+          children: parseInlineMarkdown(taskMatch[2] || ''),
         };
       }
-
+ 
       // Check for numbered lists: 1. text
-      const numberedMatch = trimmed.match(/^\d+\.\s(.*)/);
+      const numberedMatch = trimmed.match(/^\d+\.\s?(.*)/);
       if (numberedMatch) {
         return {
           type: 'list-item',
           listType: 'numbered-list',
-          children: [{ text: numberedMatch[1] }],
+          children: parseInlineMarkdown(numberedMatch[1] || ''),
         };
       }
-
+ 
       // Check for bulleted lists: - or * or +
-      const bulletMatch = trimmed.match(/^[-*+]\s(.*)/);
+      const bulletMatch = trimmed.match(/^[-*+]\s?(.*)/);
       if (bulletMatch) {
         return {
           type: 'list-item',
           listType: 'bulleted-list',
-          children: [{ text: bulletMatch[1] }],
+          children: parseInlineMarkdown(bulletMatch[1] || ''),
         };
       }
 
       // Check for blockquotes
       const quoteMatch = trimmed.match(/^>\s?(.*)/);
       if (quoteMatch) {
-        return { type: 'block-quote', children: [{ text: quoteMatch[1] }] };
+        return { type: 'block-quote', children: parseInlineMarkdown(quoteMatch[1]) };
       }
 
       // Check for headers
       if (trimmed.startsWith('## ')) {
-        return { type: 'heading-two', children: [{ text: trimmed.slice(3) }] };
+        return { type: 'heading-two', children: parseInlineMarkdown(trimmed.slice(3)) };
       }
       if (trimmed.startsWith('# ')) {
-        return { type: 'heading-one', children: [{ text: trimmed.slice(2) }] };
+        return { type: 'heading-one', children: parseInlineMarkdown(trimmed.slice(2)) };
       }
 
       return {
         type: 'paragraph',
-        children: [{ text: line }],
+        children: parseInlineMarkdown(line),
       };
     });
   

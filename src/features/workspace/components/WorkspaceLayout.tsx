@@ -206,7 +206,7 @@ export function WorkspaceLayout() {
                     setFiles(prev => prev.map(f =>
                       f.id === activeFile.id ? { ...f, content: newContent } : f
                     ));
-                    handleSave();
+                    handleSave(newContent, activeFile.id);
                   }}
                   fontSize={editorFontSize}
                   activeFileId={activeFile.id}

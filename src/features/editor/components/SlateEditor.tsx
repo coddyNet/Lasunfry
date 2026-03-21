@@ -16,7 +16,7 @@ import {
 } from 'slate-react';
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';
-import { deserializeMarkdown, serializeMarkdown, formatMarkdown, FormattingSettings, getInitialSlateValue } from '../utils/slateHelpers';
+import { deserializeMarkdown, serializeMarkdown, formatMarkdown, FormattingSettings, getInitialSlateValue, parseInlineMarkdown } from '../utils/slateHelpers';
 import { Tooltip } from 'components/Tooltip';
 
 const LIST_TYPES = ['numbered-list', 'bulleted-list'];
@@ -95,6 +95,94 @@ const isMarkActive = (editor: Editor, format: string) => {
   return marks ? (marks as any)[format] === true : false;
 };
 
+// --- Shortcuts Decorator ---
+const withShortcuts = (editor: Editor) => {
+  const { insertText } = editor;
+
+  editor.insertText = (text: string) => {
+    const { selection } = editor;
+    if (!selection || !Range.isCollapsed(selection)) return insertText(text);
+
+    const anchor = selection.anchor;
+    
+    // Look at the entire block string to support multi-node shortcuts (nesting)
+    const [blockNode, blockPath] = Editor.above(editor, {
+      match: n => SlateElement.isElement(n) && !Editor.isInline(editor, n)
+    }) || [editor, []];
+
+    const lineRange = { anchor: Editor.start(editor, blockPath), focus: anchor };
+    const lineText = Editor.string(editor, lineRange) + text;
+
+    const applyMarksToFragment = (fragment: Descendant[], marks: string[]) => {
+      return fragment.map(node => {
+        if (Text.isText(node)) {
+          const newNode = { ...node };
+          marks.forEach(m => (newNode as any)[m] = true);
+          return newNode;
+        }
+        if (SlateElement.isElement(node)) {
+          return {
+            ...node,
+            children: applyMarksToFragment(node.children, marks)
+          } as Descendant;
+        }
+        return node;
+      });
+    };
+
+    const patterns = [
+      { reg: /(?<!\*)\*\*\*(.+?)\*\*\*(?!\*)$/, marks: ['bold', 'italic'], len: 3 },
+      { reg: /(?<!_)\_\_\_(.+?)___(?!\_)$/, marks: ['bold', 'italic'], len: 3 },
+      { reg: /(?<!~)~~(?![~])(.+?)(?<!~)~~(?![~])$/, marks: ['strikethrough'], len: 2 },
+      { reg: /(?<!\+)\+\+(?![+])(.+?)(?<!\+)\+\+(?![+])$/, marks: ['underline'], len: 2 },
+      { reg: /(?<!\*)\*\*(?!\*)(.+?)(?<!\*)\*\*(?!\*)$/, marks: ['bold'], len: 2 },
+      { reg: /(?<!\_)\_\_(?!\_)(.+?)(?<!\_)\_\_(?!\_)$/, marks: ['bold'], len: 2 },
+      { reg: /(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)$/, marks: ['italic'], len: 1 },
+      { reg: /(?<!_)_(?!\_)(.+?)(?<!_)_(?!\_)$/, marks: ['italic'], len: 1 },
+      { reg: /(?<!`)`(?![`])(.+?)(?<!`)`(?!`)$/, marks: ['code'], len: 1 },
+    ];
+
+    for (const pattern of patterns) {
+      const match = lineText.match(pattern.reg);
+      if (match) {
+        const matchedText = match[1];
+        const totalLen = (pattern.len * 2) + matchedText.length;
+        
+        Editor.withoutNormalizing(editor, () => {
+          // 1. Calculate the match range
+          const matchStart = Editor.before(editor, anchor, { distance: totalLen - 1, unit: 'character' }) || lineRange.anchor;
+          const matchRange = { anchor: matchStart, focus: anchor };
+
+          // 2. Calculate content range (inside markers)
+          const contentStart = Editor.after(editor, matchStart, { distance: pattern.len, unit: 'character' }) || matchStart;
+          // The suffix hasn't been typed yet, but it's in lineText? No, lineText includes the latest char.
+          // But the editor DOES NOT yet have the latest char.
+          // So the suffix in the editor is pattern.len - 1 characters long.
+          const contentEnd = Editor.before(editor, anchor, { distance: pattern.len - 1, unit: 'character' }) || anchor;
+          
+          const contentRange = { anchor: contentStart, focus: contentEnd };
+
+          // 3. Extract rich content and apply marks
+          const fragment = Editor.fragment(editor, contentRange);
+          const newNodes = applyMarksToFragment(fragment, pattern.marks);
+
+          // 4. Atomic replacement
+          Transforms.select(editor, matchRange);
+          Transforms.delete(editor);
+          Transforms.insertNodes(editor, newNodes);
+          
+          // Collapse selection to end
+          Transforms.collapse(editor, { edge: 'end' });
+        });
+        return;
+      }
+    }
+    insertText(text);
+  };
+
+  return editor;
+};
+
 // --- Elements & Leaves ---
 const Element = (props: RenderElementProps) => {
   const { attributes, children, element } = props;
@@ -150,11 +238,11 @@ const Element = (props: RenderElementProps) => {
 
 const Leaf = ({ attributes, children, leaf }: any) => {
   let content = children;
-  if (leaf.bold) content = <strong>{content}</strong>;
-  if (leaf.italic) content = <em>{content}</em>;
-  if (leaf.code) content = <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{content}</code>;
-  if (leaf.underline) content = <u>{content}</u>;
-  if (leaf.strikethrough) content = <s className="text-slate-500">{content}</s>;
+  if (leaf.bold) content = <span className="font-bold">{content}</span>;
+  if (leaf.italic) content = <em className="italic">{content}</em>;
+  if (leaf.code) content = <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono text-sm">{content}</code>;
+  if (leaf.underline) content = <u className="underline">{content}</u>;
+  if (leaf.strikethrough) content = <s className="text-slate-500 line-through">{content}</s>;
 
   if (leaf.grammarError) {
     content = (
@@ -247,7 +335,7 @@ export function SlateEditor({
 }: SlateEditorProps) {
   const renderElement = useCallback((props: RenderElementProps) => <Element {...props} />, []);
   const renderLeaf = useCallback((props: RenderLeafProps) => <Leaf {...props} />, []);
-  const editor = useMemo(() => withHistory(withReact(createEditor())), []);
+  const editor = useMemo(() => withShortcuts(withHistory(withReact(createEditor()))), []);
   const [isCorrecting, setIsCorrecting] = useState(false);
   const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isCheckingRef = useRef(false);
@@ -346,10 +434,12 @@ export function SlateEditor({
         return;
       }
 
+      // Safely replace all content
       Transforms.delete(editor, {
         at: { anchor: Editor.start(editor, []), focus: Editor.end(editor, []) },
       });
-      Transforms.insertNodes(editor, newNodes);
+      Transforms.insertNodes(editor, newNodes, { at: [0] });
+      Transforms.select(editor, Editor.start(editor, [])); // Set selection to start of new content
       
       grammarMatches.forEach(m => m.rangeRef.unref());
       setGrammarMatches([]);
@@ -497,9 +587,18 @@ export function SlateEditor({
     } else {
       newValue = initialContent || getInitialSlateValue();
     }
-    setValue(newValue);
+    
+    // Safety check: Ensure we don't end up with empty children which Slate hates
+    if (!newValue || newValue.length === 0) {
+      newValue = getInitialSlateValue();
+    }
+
+    // Reset editor state safely
     editor.children = newValue;
+    editor.selection = null; // CRITICAL: Clear selection to avoid "path not found" on old selection
+    editor.history = { undos: [], redos: [] };
     editor.onChange();
+    setValue(newValue);
   }, [editor, initialContent]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
@@ -644,9 +743,26 @@ export function SlateEditor({
             renderLeaf={renderLeaf}
             decorate={decorate}
             placeholder="Start typing your masterpieces here..."
-            spellCheck
+            spellCheck={false}
             autoFocus
             onKeyDown={onKeyDown}
+            onPaste={(event) => {
+              const text = event.clipboardData.getData('text/plain');
+              
+              // If it looks like markdown (contains markers), handle it
+              // Simplified check: if it contains **, *, #, - [, etc.
+              const isMarkdown = /[\*#_~`]/.test(text) || /^([*-]\s|\d+\.\s|>\s)/m.test(text);
+
+              if (isMarkdown) {
+                event.preventDefault();
+                const nodes = deserializeMarkdown(text);
+                
+                // If we have multiple lines/blocks, insert them as a fragment
+                // If it's a single block, Slate handles it naturally with insertFragment
+                Transforms.insertFragment(editor, nodes);
+                return;
+              }
+            }}
             style={{ fontSize: `${fontSize}px` }}
             className="editor-area h-full min-h-[500px] w-full outline-none leading-relaxed text-slate-800 dark:text-slate-200 font-sans"
           />

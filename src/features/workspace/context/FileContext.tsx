@@ -31,7 +31,7 @@ interface FileContextType {
   lastSavedStatus: 'idle' | 'saving' | 'saved' | 'error';
   handleCreateFile: () => Promise<void>;
   executeDelete: (id: string) => Promise<void>;
-  handleSave: () => Promise<void>;
+  handleSave: (contentOverride?: string | Descendant[], fileIdOverride?: string) => Promise<void>;
   closeTab: (id: string, e: React.MouseEvent) => void;
   openFile: (id: string) => void;
   handleRename: (id: string, newName: string) => Promise<void>;
@@ -192,22 +192,26 @@ export function FileProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handleSave = async () => {
-    if (!activeFile || !user) return;
+  const handleSave = async (contentOverride?: string | Descendant[], fileIdOverride?: string) => {
+    const targetFileId = fileIdOverride || activeFileId;
+    const targetFile = files.find(f => f.id === targetFileId);
+    if (!targetFile || !user) return;
+    
     setIsSaving(true);
     setLastSavedStatus('saving');
     try {
-      let contentToSave = activeFile.content;
+      let contentToSave = contentOverride !== undefined ? contentOverride : targetFile.content;
       if (typeof contentToSave !== 'string') {
         contentToSave = serializeMarkdown(contentToSave as Descendant[]);
       }
 
-      const updatedFile = { ...activeFile, content: contentToSave, lastSaved: Date.now() };
-      await setDoc(doc(db, 'notes', activeFile.id), updatedFile);
+      const updatedFile = { ...targetFile, content: contentToSave, lastSaved: Date.now() };
+      await setDoc(doc(db, 'notes', targetFileId), updatedFile);
       setLastSavedStatus('saved');
       setTimeout(() => setLastSavedStatus('idle'), 3000);
     } catch (error) {
       setLastSavedStatus('error');
+      console.error("Save failed:", error);
       showToast("Failed to save changes. Please check your connection.", 'error');
     } finally {
       setIsSaving(false);
@@ -227,14 +231,13 @@ export function FileProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [activeFile?.content, user]);
 
-  const downloadFile = () => {
+  const downloadFile = async () => {
     if (!activeFile) {
       showToast("No active file to download", "error");
       return;
     }
 
     try {
-      // Ensure we have the latest content serialized
       const contentStr = typeof activeFile.content === 'string'
         ? activeFile.content
         : serializeMarkdown(activeFile.content);
@@ -244,22 +247,50 @@ export function FileProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const blob = new Blob([contentStr], { type: 'text/markdown;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      
-      // Use the actual file name, ensuring it has the correct extension
       let fileName = activeFile.name;
       if (!fileName.endsWith('.md') && !fileName.endsWith('.txt')) {
         fileName += activeFile.type === 'md' ? '.md' : '.txt';
       }
 
+      // Check if the modern File System Access API is supported
+      if ('showSaveFilePicker' in window) {
+        try {
+          const handle = await (window as any).showSaveFilePicker({
+            suggestedName: fileName,
+            types: [
+              {
+                description: 'Markdown File',
+                accept: { 'text/markdown': ['.md'] },
+              },
+              {
+                description: 'Text File',
+                accept: { 'text/plain': ['.txt'] },
+              },
+            ],
+          });
+          
+          const writable = await handle.createWritable();
+          await writable.write(contentStr);
+          await writable.close();
+          showToast(`Saved as ${handle.name}`, "success");
+          return;
+        } catch (err: any) {
+          // If the user cancelled, we don't need to do anything or show an error
+          if (err.name === 'AbortError') return;
+          console.error("Save system failed, falling back:", err);
+        }
+      }
+
+      // Fallback for browsers without showSaveFilePicker (or if it failed)
+      const blob = new Blob([contentStr], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      
       a.href = url;
       a.download = fileName;
       document.body.appendChild(a);
       a.click();
       
-      // Cleanup
       setTimeout(() => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
