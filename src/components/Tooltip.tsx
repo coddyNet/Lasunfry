@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface TooltipProps {
@@ -28,7 +28,7 @@ export function Tooltip({
 
   const show = isVisible || forceShow;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (show && tooltipRef.current && triggerRef.current) {
       const tooltipRect = tooltipRef.current.getBoundingClientRect();
       const triggerRect = triggerRef.current.getBoundingClientRect();
@@ -108,11 +108,14 @@ export function Tooltip({
             animate={{ 
               opacity: 1, 
               scale: 1, 
-              y: 0,
-              x: offset.x 
+              y: 0 
             }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.1, ease: 'easeOut' }}
+            style={{ 
+              marginLeft: position === 'top' || position === 'bottom' ? `${offset.x}px` : 0,
+              marginTop: position === 'left' || position === 'right' ? `${offset.y}px` : 0
+            }}
             className={`absolute z-[100] whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-bold shadow-2xl pointer-events-none ${positionClass} ${
               variant === 'error' 
                 ? 'bg-red-500 text-white' 

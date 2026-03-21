@@ -8,7 +8,7 @@ interface TabBarProps {
 }
 
 export function TabBar() {
-  const { openFiles, activeFileId, setActiveFileId, closeTab, handleCreateFile } = useFile();
+  const { openFiles, activeFileId, openFile, closeTab } = useFile();
 
   return (
     <div className="flex border-b border-slate-100 bg-white/40 px-2 md:px-4 backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-950/40 overflow-x-auto no-scrollbar scroll-smooth">
@@ -16,7 +16,7 @@ export function TabBar() {
         {openFiles.map(file => (
           <div
             key={file.id}
-            onClick={() => setActiveFileId(file.id)}
+            onClick={() => openFile(file.id)}
             className={`flex h-full items-center gap-2 border-b-2 px-4 text-[13px] font-semibold cursor-pointer transition-all duration-300 ${
               activeFileId === file.id
                 ? 'border-google-blue text-google-blue'
@@ -25,16 +25,14 @@ export function TabBar() {
           >
             <Type size={14} />
             {file.name.replace(/\.(txt|md)$/i, '')}
-            <Tooltip title="Close Note" position="bottom" delay={0.3}>
-              <button
-                onClick={(e) => closeTab(file.id, e)}
-                className={`ml-1 rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 ${
-                  activeFileId === file.id ? 'text-google-blue' : 'text-slate-400'
-                }`}
-              >
-                <X size={12} />
-              </button>
-            </Tooltip>
+            <button
+              onClick={(e) => closeTab(file.id, e)}
+              className={`ml-1 rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 ${
+                activeFileId === file.id ? 'text-google-blue' : 'text-slate-400'
+              }`}
+            >
+              <X size={12} />
+            </button>
           </div>
         ))}
       </div>

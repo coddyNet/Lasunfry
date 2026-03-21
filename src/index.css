@@ -35,6 +35,7 @@
 @layer base {
   body {
     @apply font-sans bg-background-light text-slate-900 dark:bg-background-dark dark:text-slate-100;
+    overflow-x: hidden;
   }
 }
 

@@ -178,7 +178,7 @@ const Leaf = ({ attributes, children, leaf }: any) => {
 
 function ToolbarButton({ icon, title, onClick, active, onPointerDown, className = "", variant = 'default', forceShow = false }: any) {
   return (
-    <Tooltip content={title || ''} className="z-[60]" position="bottom" variant={variant} forceShow={forceShow}>
+    <Tooltip title={title || ''} position="bottom" variant={variant} forceShow={forceShow}>
       <button 
         onClick={onClick}
         onPointerDown={onPointerDown}
@@ -477,7 +477,12 @@ export function SlateEditor({
     return initialContent || getInitialSlateValue();
   });
 
+  const hasInitializedRef = useRef(false);
+
   useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
     let newValue: Descendant[];
     if (typeof initialContent === 'string') {
       if (initialContent.trim().startsWith('[{') || initialContent.trim().startsWith('{"')) {
@@ -495,7 +500,7 @@ export function SlateEditor({
     setValue(newValue);
     editor.children = newValue;
     editor.onChange();
-  }, [activeFileId, editor, initialContent]);
+  }, [editor, initialContent]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     const { selection } = editor;
