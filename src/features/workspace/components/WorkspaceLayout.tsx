@@ -11,6 +11,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { serializeMarkdown } from 'features/editor';
 import { Descendant } from 'slate';
 
+import { ShareModal } from './ShareModal';
+
 export function WorkspaceLayout() {
   const { 
     files, setFiles, activeFileId, activeFile, 
@@ -27,6 +29,7 @@ export function WorkspaceLayout() {
   const [editingFileName, setEditingFileName] = useState('');
   const [contextMenu, setContextMenu] = useState<{ fileId: string; x: number; y: number } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   const isRenamingRef = useRef(false);
 
@@ -140,6 +143,12 @@ export function WorkspaceLayout() {
         <div className="absolute right-[20%] top-[40%] h-[25%] w-[25%] rounded-full bg-google-yellow/10 blur-[120px]"></div>
       </div>
 
+      <ShareModal 
+        isOpen={isShareModalOpen} 
+        onClose={() => setIsShareModalOpen(false)} 
+        file={activeFile || null} 
+      />
+
       {confirmDeleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
@@ -214,10 +223,8 @@ export function WorkspaceLayout() {
                   formattingSettings={formattingSettings}
                   onSettingsChange={updateFormattingSettings}
                   onDownload={downloadFile}
-                  onShare={() => {
-                    navigator.clipboard.writeText(window.location.href);
-                    showToast('Link copied to clipboard!', 'success');
-                  }}
+                  onShare={() => setIsShareModalOpen(true)}
+
                 />
               </div>
             )}
