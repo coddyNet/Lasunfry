@@ -52,8 +52,8 @@ export function Sidebar({
         }}
       >
         <div style={{ width: isMobile ? '85vw' : '280px', maxWidth: '320px' }} className="flex flex-col h-full">
-          <div className="flex flex-col p-4 h-full">
-            <div className="flex flex-col gap-6">
+          <div className="flex flex-col p-4 h-full overflow-hidden">
+            <div className="flex flex-col gap-6 flex-shrink-0">
               <div className="relative w-full px-3 mt-3 mb-2">
                 <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400/80 dark:text-slate-500 transition-colors peer-focus:text-google-blue" size={16} />
                 <input
@@ -77,8 +77,15 @@ export function Sidebar({
                   </Tooltip>
                 </div>
               </div>
-              <nav className="space-y-1 overflow-y-auto max-h-[calc(100vh-250px)]">
-                {filteredFiles.map(file => (
+            </div>
+            <nav 
+              className="space-y-1 flex-1 overflow-y-auto no-scrollbar mb-24 pt-4 pb-8 relative z-10"
+              style={{
+                maskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 32px), transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 32px), transparent 100%)'
+              }}
+            >
+              {filteredFiles.map(file => (
                   <div
                     key={file.id}
                     className="group relative"
@@ -152,7 +159,6 @@ export function Sidebar({
                   </div>
                 )}
               </nav>
-            </div>
           </div>
         </div>
       </aside>
