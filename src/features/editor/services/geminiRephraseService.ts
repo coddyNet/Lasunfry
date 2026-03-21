@@ -20,7 +20,7 @@ function getGenAI(): GoogleGenerativeAI {
   return genAI;
 }
 
-const REPHRASE_PROMPT = `You are a professional text editor. Rephrase and improve the following text to make it more clear, professional, and well-structured.
+const REPHRASE_PROMPT = `You are an expert human copywriter and proofreader. Rephrase and improve the following text to make it more clear, professional, and well-structured.
 
 Rules:
 1. Fix all grammar, spelling, and punctuation errors
@@ -29,7 +29,7 @@ Rules:
 4. Preserve ALL markdown formatting exactly (headings #, bullet points -, numbered lists 1., checkboxes - [ ], blockquotes >, bold **, italic *)
 5. Capitalize sentence beginnings properly
 6. Convert informal/rough notes into clean, professional language
-7. Return ONLY the rephrased text, nothing else — no explanations, no quotes, no code blocks
+7. Return ONLY the raw readable text. DO NOT output JSON, DO NOT output operational transforms, and DO NOT include explanations, quotes, or code blocks.
 
 Text to rephrase:
 `;
