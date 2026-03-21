@@ -5,7 +5,7 @@ import { TopNav } from '../components/TopNav';
 import { Sidebar } from '../components/Sidebar';
 import { TabBar } from '../components/TabBar';
 import { SlateEditor } from 'features/editor';
-import { FileText, Plus, X, History, Sparkles } from 'lucide-react';
+import { FileText, Plus, X, History, Sparkles, Edit2, Trash2 } from 'lucide-react';
 import { Branding } from 'components/Branding';
 import { motion, AnimatePresence } from 'motion/react';
 import { serializeMarkdown } from 'features/editor';
@@ -186,15 +186,7 @@ export function WorkspaceLayout() {
         />
 
         <main className="relative flex flex-1 flex-col bg-transparent">
-          <TabBar 
-            editingFileId={editingFileId}
-            setEditingFileId={setEditingFileId}
-            editingFileName={editingFileName}
-            setEditingFileName={setEditingFileName}
-            startRenaming={startRenaming}
-            submitRename={handleRenameWrapper}
-            isRenamingRef={isRenamingRef}
-          />
+          <TabBar />
 
           <div className="flex flex-1 overflow-hidden relative bg-white/20 dark:bg-slate-950/20">
             {!activeFile ? (
@@ -296,6 +288,52 @@ export function WorkspaceLayout() {
           ))}
         </AnimatePresence>
       </div>
+
+      {/* Context Menu Restoration */}
+      <AnimatePresence>
+        {contextMenu && (
+          <>
+            <div 
+              className="fixed inset-0 z-[110]" 
+              onClick={() => setContextMenu(null)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setContextMenu(null);
+              }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -10 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+              style={{ top: contextMenu.y, left: contextMenu.x }}
+              className="fixed z-[120] min-w-[130px] overflow-hidden rounded-xl border border-slate-100 bg-white/90 p-1 shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90"
+            >
+              <button
+                onClick={() => {
+                  const file = files.find(f => f.id === contextMenu.fileId);
+                  if (file) startRenaming(file, { stopPropagation: () => {} } as any, 'sidebar');
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition-all"
+              >
+                <Edit2 size={15} className="text-slate-400 dark:text-slate-500" />
+                Edit
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmDeleteId(contextMenu.fileId);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30 transition-all"
+              >
+                <Trash2 size={15} className="text-red-500 dark:text-red-400" />
+                Delete
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

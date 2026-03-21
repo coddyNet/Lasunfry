@@ -228,19 +228,48 @@ export function FileProvider({ children }: { children: ReactNode }) {
   }, [activeFile?.content, user]);
 
   const downloadFile = () => {
-    if (!activeFile) return;
-    const contentStr = typeof activeFile.content === 'string'
-      ? activeFile.content
-      : serializeMarkdown(activeFile.content);
-    const blob = new Blob([contentStr], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = activeFile.name.replace(/\.(txt|md)$/i, '') + '.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (!activeFile) {
+      showToast("No active file to download", "error");
+      return;
+    }
+
+    try {
+      // Ensure we have the latest content serialized
+      const contentStr = typeof activeFile.content === 'string'
+        ? activeFile.content
+        : serializeMarkdown(activeFile.content);
+
+      if (!contentStr && activeFile.content !== '') {
+        showToast("Failed to process file content for download", "error");
+        return;
+      }
+
+      const blob = new Blob([contentStr], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      
+      // Use the actual file name, ensuring it has the correct extension
+      let fileName = activeFile.name;
+      if (!fileName.endsWith('.md') && !fileName.endsWith('.txt')) {
+        fileName += activeFile.type === 'md' ? '.md' : '.txt';
+      }
+
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Cleanup
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+      
+      showToast(`Downloading ${fileName}...`, "success");
+    } catch (error) {
+      console.error("Download failed:", error);
+      showToast("Download failed. Please try again.", "error");
+    }
   };
 
   return (
