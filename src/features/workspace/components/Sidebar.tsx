@@ -1,7 +1,8 @@
 import React from 'react';
-import { Search, Plus, FileText, MoreVertical } from 'lucide-react';
+import { Search, Plus, FileText, MoreVertical, PanelLeftClose } from 'lucide-react';
 import { useFile, File as FileType } from '../context/FileContext';
 import { Tooltip } from 'components/Tooltip';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface SidebarProps {
   isMobile: boolean;
@@ -35,49 +36,68 @@ export function Sidebar({
   const { searchQuery, setSearchQuery, filteredFiles, handleCreateFile, activeFileId, openFile } = useFile();
 
   return (
-    <>
+    <AnimatePresence>
       {isSidebarOpen && isMobile && (
-        <div
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
           onClick={() => setIsSidebarOpen(false)}
-          className="fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-[90] bg-slate-900/40 backdrop-blur-md lg:hidden"
         />
       )}
 
-      <aside
-        className="flex flex-col border-r border-slate-100 bg-white/80 backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-950/80 lg:bg-white/40 overflow-hidden shadow-2xl lg:shadow-none"
-        style={{
-          width: isSidebarOpen ? (isMobile ? '85%' : '280px') : (isMobile ? '0px' : '0px'),
-          minWidth: isSidebarOpen ? undefined : '0px',
-          transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          position: isMobile ? 'fixed' : 'relative',
-          ...(isMobile ? { inset: '0 auto 0 0', zIndex: 40 } : {})
-        }}
-      >
-        <div style={{ width: isMobile ? '85vw' : '280px', maxWidth: '320px' }} className="flex flex-col h-full">
+      {(isSidebarOpen || !isMobile) && (
+        <motion.aside
+          initial={isMobile ? { x: '-100%' } : false}
+          animate={{ x: 0 }}
+          exit={{ x: '-100%' }}
+          transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+          className={`flex flex-col border-r border-slate-100 bg-white/80 backdrop-blur-3xl dark:border-slate-800 dark:bg-slate-950/80 lg:bg-white/40 overflow-hidden shadow-2xl lg:shadow-none ${
+            isMobile ? 'fixed inset-y-0 left-0 z-[100] w-[285px]' : 'relative'
+          }`}
+          style={{
+            width: !isMobile ? (isSidebarOpen ? '280px' : '0px') : undefined,
+            transition: !isMobile ? 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)' : undefined,
+          }}
+        >
+          <div className="flex flex-col h-full w-[285px] lg:w-[280px]">
           <div className="flex flex-col p-4 h-full overflow-hidden">
             <div className="flex flex-col gap-6 flex-shrink-0">
-              <div className="relative w-full px-3 mt-3 mb-2">
-                <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400/80 dark:text-slate-500 transition-colors peer-focus:text-google-blue" size={16} />
-                <input
-                  className="peer h-9 w-full rounded-lg border border-transparent bg-slate-100 dark:bg-slate-900 pl-10 pr-4 text-[13px] font-medium text-slate-800 placeholder-slate-500 focus:border-google-blue focus:bg-white focus:outline-none dark:text-slate-200 dark:placeholder-slate-400 dark:focus:border-google-blue dark:focus:bg-slate-950 transition-all"
-                  placeholder="Search notes..."
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
+              <div className="flex items-center gap-1 px-3 mt-3 mb-2">
+                {isMobile && (
+                  <button 
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 transition-all"
+                  >
+                    <PanelLeftClose size={18} />
+                  </button>
+                )}
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400/80 dark:text-slate-500 transition-colors peer-focus:text-google-blue" size={16} />
+                  <input
+                    className="peer h-9 w-full rounded-lg border border-transparent bg-slate-100 dark:bg-slate-900 pl-9 pr-4 text-[13px] font-medium text-slate-800 placeholder-slate-500 focus:border-google-blue focus:bg-white focus:outline-none dark:text-slate-200 dark:placeholder-slate-400 dark:focus:border-google-blue dark:focus:bg-slate-950 transition-all"
+                    placeholder="Search notes..."
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
               </div>
               <div className="flex items-center justify-between px-2 pt-2">
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Workspace</p>
-                <div className="flex items-center gap-1">
-                  <Tooltip title="New File" position="top">
-                    <button
-                      onClick={handleCreateFile}
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-google-blue shadow-sm hover:shadow-md hover:bg-slate-50 transition-all duration-200 dark:bg-slate-800 dark:hover:bg-slate-700"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </Tooltip>
-                </div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Workspace</p>
+                {filteredFiles.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    <Tooltip title="New File" position="top">
+                      <button
+                        onClick={handleCreateFile}
+                        className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-google-blue shadow-sm hover:shadow-md hover:bg-slate-50 transition-all duration-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700"
+                      >
+                        <Plus size={16} />
+                      </button>
+                    </Tooltip>
+                  </div>
+                )}
               </div>
             </div>
             <nav 
@@ -165,14 +185,14 @@ export function Sidebar({
                   </div>
                 ))}
                 {filteredFiles.length === 0 && (
-                  <div className="px-3 py-12 text-center">
-                    <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
+                  <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                    <div className="h-10 w-10 flex items-center justify-center rounded-full bg-slate-50 dark:bg-slate-900/50 text-slate-400 mb-3 grayscale opacity-60">
                       <Plus size={20} />
                     </div>
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">No notes yet</p>
-                    <button
+                    <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">No notes yet</p>
+                    <button 
                       onClick={handleCreateFile}
-                      className="mt-3 text-xs font-bold text-google-blue hover:underline"
+                      className="mt-3 text-[11px] font-bold text-google-blue hover:underline opacity-80"
                     >
                       Create your first note
                     </button>
@@ -181,7 +201,8 @@ export function Sidebar({
               </nav>
           </div>
         </div>
-      </aside>
-    </>
+        </motion.aside>
+      )}
+    </AnimatePresence>
   );
 }

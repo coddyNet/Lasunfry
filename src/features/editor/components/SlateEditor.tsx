@@ -664,8 +664,8 @@ export function SlateEditor({
         }}
       >
         {/* Toolbar - fixed, never scrolls */}
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-4 md:px-[20px] py-2 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm overflow-x-clip">
-          <div className="flex items-center gap-0.5 md:gap-1">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-1 md:px-[20px] py-1.5 md:py-2 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-0.5 md:gap-1 min-w-max">
             <MarkButton format="bold" icon={<Bold size={16} />} title="Bold (Ctrl+B)" />
             <MarkButton format="italic" icon={<Italic size={16} />} title="Italic (Ctrl+I)" />
             <MarkButton format="underline" icon={<Underline size={16} />} title="Underline (Ctrl+U)" />
@@ -737,7 +737,7 @@ export function SlateEditor({
         </div>
 
         {/* Scrollable editor content */}
-        <div className="flex-1 overflow-y-auto overflow-x-clip p-4 md:p-[20px]">
+        <div className="flex-1 overflow-y-auto overflow-x-clip p-3 md:p-[20px]">
           <Editable
             renderElement={renderElement}
             renderLeaf={renderLeaf}

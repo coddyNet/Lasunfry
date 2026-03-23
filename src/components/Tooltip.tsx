@@ -21,12 +21,25 @@ export function Tooltip({
 }: TooltipProps & { content?: string }) {
   const displayTitle = title || content;
   const [isVisible, setIsVisible] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const tooltipRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const show = isVisible || forceShow;
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      console.log('Tooltip checkMobile:', { width: window.innerWidth, mobile });
+      setIsMobile(mobile);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const show = (isVisible || forceShow) && !isMobile;
+  console.log('Tooltip show:', { isVisible, forceShow, isMobile, show, title });
 
   useLayoutEffect(() => {
     if (show && tooltipRef.current && triggerRef.current) {
@@ -116,7 +129,7 @@ export function Tooltip({
               marginLeft: position === 'top' || position === 'bottom' ? `${offset.x}px` : 0,
               marginTop: position === 'left' || position === 'right' ? `${offset.y}px` : 0
             }}
-            className={`absolute z-[100] whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-bold shadow-2xl pointer-events-none ${positionClass} ${
+            className={`absolute z-[100] hidden md:block whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-bold shadow-2xl pointer-events-none ${positionClass} ${
               variant === 'error' 
                 ? 'bg-red-500 text-white' 
                 : 'bg-slate-900 text-white dark:bg-slate-800'
