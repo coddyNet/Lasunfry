@@ -247,7 +247,7 @@ const Leaf = ({ attributes, children, leaf }: any) => {
   if (leaf.grammarError) {
     content = (
       <span
-        className="bg-pink-100/50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 border-b-2 border-pink-400 dark:border-pink-500 cursor-pointer transition-colors hover:bg-pink-200/50 dark:hover:bg-pink-800/50"
+        className="bg-pink-100/50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 shadow-[inset_0_-2px_0_0_#F472B6] dark:shadow-[inset_0_-2px_0_0_#EC4899] cursor-pointer transition-colors hover:bg-pink-200/50 dark:hover:bg-pink-800/50"
         onMouseEnter={(e) => {
           e.stopPropagation();
           const event = new CustomEvent('openGrammarMatch', {
@@ -735,10 +735,10 @@ export function SlateEditor({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto overflow-x-clip p-3 md:p-[20px]">
+        <div className="flex-1 overflow-y-auto overflow-x-clip p-3 md:p-[20px] relative">
           {/* Floating Actions: Share & Download - Mobile Only */}
           {(onShare || onDownload) && (
-            <div className="fixed top-[210px] right-2 md:right-5 z-20 flex md:hidden flex-row items-center gap-2">
+            <div className="absolute top-2 right-2 md:top-5 md:right-5 z-20 flex md:hidden flex-row items-center gap-2">
               {onShare && (
                 <Tooltip title="Share Link" position="bottom">
                   <button 
@@ -793,7 +793,7 @@ export function SlateEditor({
 
         {activeGrammarMatch && (
           <div
-            className="fixed z-50 bg-white dark:bg-slate-800 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-200 dark:border-slate-700 p-4 w-72 text-sm font-sans"
+            className="fixed z-[9999] bg-white dark:bg-slate-800 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-200 dark:border-slate-700 p-4 w-72 text-sm font-sans"
             style={{
               top: activeGrammarMatch.rect.bottom + 8,
               left: Math.max(10, activeGrammarMatch.rect.left - 50)
