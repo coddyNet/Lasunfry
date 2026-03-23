@@ -3,6 +3,7 @@ import { Search, Plus, FileText, MoreVertical, PanelLeftClose } from 'lucide-rea
 import { useFile, File as FileType } from '../context/FileContext';
 import { Tooltip } from 'components/Tooltip';
 import { motion, AnimatePresence } from 'motion/react';
+import { Skeleton } from 'components/Skeleton';
 
 interface SidebarProps {
   isMobile: boolean;
@@ -33,7 +34,7 @@ export function Sidebar({
   isRenamingRef,
   setHoveredUrl
 }: SidebarProps) {
-  const { searchQuery, setSearchQuery, filteredFiles, handleCreateFile, activeFileId, openFile } = useFile();
+  const { searchQuery, setSearchQuery, filteredFiles, handleCreateFile, activeFileId, openFile, isLoading } = useFile();
 
   return (
     <AnimatePresence>
@@ -107,96 +108,109 @@ export function Sidebar({
                 WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 32px), transparent 100%)'
               }}
             >
-              {filteredFiles.map(file => (
-                  <div
-                    key={file.id}
-                    className="group relative"
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setContextMenu({ fileId: file.id, x: e.clientX, y: e.clientY });
-                    }}
-                  >
-                    {editingFileId?.id === file.id && editingFileId.location === 'sidebar' ? (
-                      <div className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium bg-google-blue text-white shadow-md shadow-google-blue/20">
-                        <FileText size={18} />
-                        <input
-                          autoFocus
-                          className="flex-1 bg-transparent outline-none border-b border-white/50 text-white min-w-0"
-                          value={editingFileName.replace(/\.(txt|md)$/i, '')}
-                          onChange={(e) => setEditingFileName(e.target.value)}
-                          onBlur={() => {
-                            const ext = file.name.match(/\.(txt|md)$/i)?.[0] ?? '.txt';
-                            if (editingFileName && !editingFileName.match(/\.(txt|md)$/i)) {
-                              setEditingFileName(editingFileName + ext);
-                            }
-                            submitRename();
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              const ext = file.name.match(/\.(txt|md)$/i)?.[0] ?? '.txt';
-                              if (editingFileName && !editingFileName.match(/\.(txt|md)$/i)) {
-                                setEditingFileName(prev => prev + ext);
-                              }
-                              e.currentTarget.blur();
-                            }
-                            if (e.key === 'Escape') {
-                              setEditingFileId(null);
-                              isRenamingRef.current = false;
-                            }
-                          }}
-                        />
+                {isLoading ? (
+                  <div className="space-y-3 px-2">
+                    {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                      <div key={i} className="flex items-center gap-3 rounded-xl px-3 py-2.5 bg-slate-50/50 dark:bg-slate-900/50">
+                        <Skeleton variant="circle" className="h-4 w-4 shrink-0" />
+                        <Skeleton variant="text" className="h-3 grow" style={{ width: `${Math.random() * 30 + 40}%` }} />
                       </div>
-                    ) : (
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    {filteredFiles.map(file => (
                       <div
-                        className={`group/item relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 cursor-pointer ${
-                          activeFileId === file.id
-                            ? 'bg-google-blue text-white shadow-md shadow-google-blue/20'
-                            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-                        }`}
-                        onClick={() => {
-                          openFile(file.id);
-                          if (isMobile) setIsSidebarOpen(false);
+                        key={file.id}
+                        className="group relative"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setContextMenu({ fileId: file.id, x: e.clientX, y: e.clientY });
                         }}
-                        onMouseEnter={() => setHoveredUrl(`${window.location.origin}/file/${file.id}`)}
-                        onMouseLeave={() => setHoveredUrl(null)}
                       >
-                        <FileText size={18} />
-                        <span className="truncate flex-1 text-left">{file.name.replace(/\.(txt|md)$/i, '')}</span>
-                        
-                        <div className={`flex-shrink-0 transition-opacity duration-200 ${activeFileId === file.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover/item:opacity-100'}`}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const rect = e.currentTarget.getBoundingClientRect();
-                              setContextMenu({ fileId: file.id, x: rect.left, y: rect.bottom + 5 });
-                            }}
-                            className={`p-1 rounded-md transition-colors ${
-                              activeFileId === file.id 
-                                ? 'hover:bg-white/20 text-white' 
-                                : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 dark:text-slate-500'
+                        {editingFileId?.id === file.id && editingFileId.location === 'sidebar' ? (
+                          <div className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium bg-google-blue text-white shadow-md shadow-google-blue/20">
+                            <FileText size={18} />
+                            <input
+                              autoFocus
+                              className="flex-1 bg-transparent outline-none border-b border-white/50 text-white min-w-0"
+                              value={editingFileName.replace(/\.(txt|md)$/i, '')}
+                              onChange={(e) => setEditingFileName(e.target.value)}
+                              onBlur={() => {
+                                const ext = file.name.match(/\.(txt|md)$/i)?.[0] ?? '.txt';
+                                if (editingFileName && !editingFileName.match(/\.(txt|md)$/i)) {
+                                  setEditingFileName(editingFileName + ext);
+                                }
+                                submitRename();
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const ext = file.name.match(/\.(txt|md)$/i)?.[0] ?? '.txt';
+                                  if (editingFileName && !editingFileName.match(/\.(txt|md)$/i)) {
+                                    setEditingFileName(prev => prev + ext);
+                                  }
+                                  e.currentTarget.blur();
+                                }
+                                if (e.key === 'Escape') {
+                                  setEditingFileId(null);
+                                  isRenamingRef.current = false;
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            className={`group/item relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 cursor-pointer ${
+                              activeFileId === file.id
+                                ? 'bg-google-blue text-white shadow-md shadow-google-blue/20'
+                                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
                             }`}
+                            onClick={() => {
+                              openFile(file.id);
+                              if (isMobile) setIsSidebarOpen(false);
+                            }}
+                            onMouseEnter={() => setHoveredUrl(`${window.location.origin}/file/${file.id}`)}
+                            onMouseLeave={() => setHoveredUrl(null)}
                           >
-                            <MoreVertical size={16} />
-                          </button>
+                            <FileText size={18} />
+                            <span className="truncate flex-1 text-left">{file.name.replace(/\.(txt|md)$/i, '')}</span>
+                            
+                            <div className={`flex-shrink-0 transition-opacity duration-200 ${activeFileId === file.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover/item:opacity-100'}`}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setContextMenu({ fileId: file.id, x: rect.left, y: rect.bottom + 5 });
+                                }}
+                                className={`p-1 rounded-md transition-colors ${
+                                  activeFileId === file.id 
+                                    ? 'hover:bg-white/20 text-white' 
+                                    : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 dark:text-slate-500'
+                                }`}
+                              >
+                                <MoreVertical size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {filteredFiles.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                        <div className="h-10 w-10 flex items-center justify-center rounded-full bg-slate-50 dark:bg-slate-900/50 text-slate-400 mb-3 grayscale opacity-60">
+                          <Plus size={20} />
                         </div>
+                        <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">No notes yet</p>
+                        <button 
+                          onClick={handleCreateFile}
+                          className="mt-3 text-[11px] font-bold text-google-blue hover:underline opacity-80"
+                        >
+                          Create your first note
+                        </button>
                       </div>
                     )}
-                  </div>
-                ))}
-                {filteredFiles.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                    <div className="h-10 w-10 flex items-center justify-center rounded-full bg-slate-50 dark:bg-slate-900/50 text-slate-400 mb-3 grayscale opacity-60">
-                      <Plus size={20} />
-                    </div>
-                    <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">No notes yet</p>
-                    <button 
-                      onClick={handleCreateFile}
-                      className="mt-3 text-[11px] font-bold text-google-blue hover:underline opacity-80"
-                    >
-                      Create your first note
-                    </button>
-                  </div>
+                  </>
                 )}
               </nav>
           </div>

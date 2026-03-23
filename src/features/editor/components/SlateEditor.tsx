@@ -271,7 +271,7 @@ function ToolbarButton({ icon, title, onClick, active, onPointerDown, className 
         onClick={onClick}
         onPointerDown={onPointerDown}
         className={`flex h-[34px] w-[34px] items-center justify-center rounded-[10px] transition-all duration-200 ${
-          active ? 'text-[#4285F4] dark:text-[#4285F4]' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+          active ? 'text-[#4285F4] dark:text-[#4285F4]' : 'text-slate-600 dark:text-slate-400'
         } ${className}`} 
       >
         {icon}
@@ -700,7 +700,7 @@ export function SlateEditor({
                   } 
                   title={grammarMatches.length === 0 ? "Fix Grammar" : `Fix ${grammarMatches.length} grammar issue${grammarMatches.length > 1 ? 's' : ''}`} 
                   onClick={handleFixAllGrammar} 
-                  className={`!rounded-[10px] !h-[34px] !w-[34px] bg-transparent group-hover:bg-red-50 dark:group-hover:bg-red-500/10 ${grammarMatches.length > 0 ? '!bg-[#FF3B30] !text-white shadow-sm ring-1 ring-[#FF3B30]/30' : ''}`}
+                  className={`!rounded-[10px] !h-[34px] !w-[34px] bg-transparent ${grammarMatches.length > 0 ? '!bg-[#FF3B30] !text-white shadow-sm ring-1 ring-[#FF3B30]/30' : ''}`}
                 />
               </div>
 
@@ -710,13 +710,12 @@ export function SlateEditor({
                   icon={<Sparkles size={18} strokeWidth={2.5} className={isRephrasing ? 'animate-spin text-[#A855F7]' : 'animate-gemini text-[#A855F7]'} />} 
                   title="Refine with Gemini" 
                   onClick={handleAIRephrase} 
-                  className={`!rounded-[10px] !h-[34px] !w-[34px] bg-transparent group-hover:bg-purple-50 dark:group-hover:bg-purple-500/10 ${isRephrasing ? 'bg-purple-50 dark:bg-purple-500/10 ring-[1px] ring-[#A855F7]/30 shadow-sm' : ''}`}
+                  className={`!rounded-[10px] !h-[34px] !w-[34px] bg-transparent ${isRephrasing ? 'ring-[1px] ring-[#A855F7]/30 shadow-sm' : ''}`}
                 />
               </div>
             </div>
           </div>
-
-          <div className="flex items-center gap-1 md:gap-2">
+          <div className="hidden md:flex items-center gap-1 md:gap-2">
             {onShare && (
               <ToolbarButton 
                 active={false}
@@ -736,8 +735,32 @@ export function SlateEditor({
           </div>
         </div>
 
-        {/* Scrollable editor content */}
         <div className="flex-1 overflow-y-auto overflow-x-clip p-3 md:p-[20px]">
+          {/* Floating Actions: Share & Download - Mobile Only */}
+          {(onShare || onDownload) && (
+            <div className="fixed top-[210px] right-2 md:right-5 z-20 flex md:hidden flex-row items-center gap-2">
+              {onShare && (
+                <Tooltip title="Share Link" position="bottom">
+                  <button 
+                    onClick={onShare}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/60 bg-white/40 backdrop-blur-xl text-slate-500 hover:bg-white hover:text-google-blue dark:border-slate-700/60 dark:bg-slate-900/40 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition-all duration-300 shadow-sm hover:shadow-md active:scale-95"
+                  >
+                    <Share2 size={16} />
+                  </button>
+                </Tooltip>
+              )}
+              {onDownload && (
+                <Tooltip title="Download Note" position="bottom">
+                  <button 
+                    onClick={onDownload}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/60 bg-white/40 backdrop-blur-xl text-slate-500 hover:bg-white hover:text-google-blue dark:border-slate-700/60 dark:bg-slate-900/40 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition-all duration-300 shadow-sm hover:shadow-md active:scale-95"
+                  >
+                    <Download size={16} />
+                  </button>
+                </Tooltip>
+              )}
+            </div>
+          )}
           <Editable
             renderElement={renderElement}
             renderLeaf={renderLeaf}

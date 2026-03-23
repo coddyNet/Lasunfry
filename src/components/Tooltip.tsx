@@ -22,7 +22,7 @@ export function Tooltip({
   const displayTitle = title || content;
   const [isVisible, setIsVisible] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
   const tooltipRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -30,7 +30,6 @@ export function Tooltip({
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth < 768;
-      console.log('Tooltip checkMobile:', { width: window.innerWidth, mobile });
       setIsMobile(mobile);
     };
     checkMobile();
@@ -42,43 +41,40 @@ export function Tooltip({
   console.log('Tooltip show:', { isVisible, forceShow, isMobile, show, title });
 
   useLayoutEffect(() => {
-    if (show && tooltipRef.current && triggerRef.current) {
-      const tooltipRect = tooltipRef.current.getBoundingClientRect();
+    if (show && triggerRef.current && tooltipRef.current) {
       const triggerRect = triggerRef.current.getBoundingClientRect();
+      const tooltipRect = tooltipRef.current.getBoundingClientRect();
+      const gap = 8;
       
-      // Find the nearest overflow-restricted parent (e.g., the Sidebar or Main container)
-      let parent = triggerRef.current.parentElement;
-      let boundary = { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
-      
-      while (parent) {
-        const style = window.getComputedStyle(parent);
-        if (style.overflow !== 'visible' || style.overflowX !== 'visible' || style.overflowY !== 'visible') {
-          const rect = parent.getBoundingClientRect();
-          boundary = rect;
-          break;
-        }
-        parent = parent.parentElement;
+      let newTop = 0;
+      let newLeft = 0;
+
+      if (position === 'top') {
+        newTop = triggerRect.top - tooltipRect.height - gap;
+        newLeft = triggerRect.left + (triggerRect.width / 2) - (tooltipRect.width / 2);
+      } else if (position === 'bottom') {
+        newTop = triggerRect.bottom + gap;
+        newLeft = triggerRect.left + (triggerRect.width / 2) - (tooltipRect.width / 2);
+      } else if (position === 'left') {
+        newTop = triggerRect.top + (triggerRect.height / 2) - (tooltipRect.height / 2);
+        newLeft = triggerRect.left - tooltipRect.width - gap;
+      } else if (position === 'right') {
+        newTop = triggerRect.top + (triggerRect.height / 2) - (tooltipRect.height / 2);
+        newLeft = triggerRect.left + triggerRect.width + gap;
       }
 
-      let newOffsetX = 0;
-      let newOffsetY = 0;
-
-      // Vertical positions (top/bottom)
-      if (position === 'top' || position === 'bottom') {
-        const tooltipCenterX = triggerRect.left + triggerRect.width / 2;
-        const halfWidth = tooltipRect.width / 2;
-        
-        const leftEdge = tooltipCenterX - halfWidth;
-        const rightEdge = tooltipCenterX + halfWidth;
-
-        if (leftEdge < boundary.left + 12) {
-          newOffsetX = (boundary.left + 12) - leftEdge;
-        } else if (rightEdge > boundary.right - 12) {
-          newOffsetX = (boundary.right - 12) - rightEdge;
-        }
+      // Viewport bounds check
+      const padding = 12;
+      if (newLeft < padding) newLeft = padding;
+      if (newLeft + tooltipRect.width > window.innerWidth - padding) {
+        newLeft = window.innerWidth - tooltipRect.width - padding;
+      }
+      if (newTop < padding) newTop = padding;
+      if (newTop + tooltipRect.height > window.innerHeight - padding) {
+        newTop = window.innerHeight - tooltipRect.height - padding;
       }
 
-      setOffset({ x: newOffsetX, y: newOffsetY });
+      setCoords({ top: newTop, left: newLeft });
     }
   }, [show, position]);
 
@@ -117,26 +113,25 @@ export function Tooltip({
         {show && (
           <motion.div
             ref={tooltipRef}
-            initial={{ opacity: 0, scale: 0.95, y: position === 'top' ? 4 : -4 }}
+            initial={{ opacity: 0, scale: 0.95 }}
             animate={{ 
               opacity: 1, 
-              scale: 1, 
-              y: 0 
+              scale: 1,
             }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.1, ease: 'easeOut' }}
             style={{ 
-              marginLeft: position === 'top' || position === 'bottom' ? `${offset.x}px` : 0,
-              marginTop: position === 'left' || position === 'right' ? `${offset.y}px` : 0
+              top: coords.top,
+              left: coords.left
             }}
-            className={`absolute z-[100] hidden md:block whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-bold shadow-2xl pointer-events-none ${positionClass} ${
+            className={`fixed z-[9999] hidden md:block whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-bold shadow-2xl pointer-events-none ${
               variant === 'error' 
                 ? 'bg-red-500 text-white' 
                 : 'bg-slate-900 text-white dark:bg-slate-800'
             }`}
           >
              {displayTitle}
-            <div className={`absolute border-l-[4px] border-r-[4px] border-transparent ${arrowClass}`} style={{ transform: `translateX(${-offset.x}px) translate(-50%, ${position === 'top' ? '0' : '0'})` }} />
+            <div className={`absolute border-l-[4px] border-r-[4px] border-transparent ${arrowClass}`} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -172,8 +167,8 @@ export function ToolbarButton({
           active
             ? 'bg-google-blue text-white shadow-lg shadow-google-blue/20'
             : variant === 'error'
-              ? 'bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/40'
-              : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+              ? 'text-red-500 dark:text-red-400'
+              : 'text-slate-500 dark:text-slate-400'
         } ${className}`}
       >
         {icon}

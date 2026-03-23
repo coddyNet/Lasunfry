@@ -28,6 +28,7 @@ interface FileContextType {
   openFiles: File[];
   filteredFiles: File[];
   isSaving: boolean;
+  isLoading: boolean;
   lastSavedStatus: 'idle' | 'saving' | 'saved' | 'error';
   handleCreateFile: () => Promise<void>;
   executeDelete: (id: string) => Promise<void>;
@@ -52,6 +53,7 @@ export function FileProvider({ children }: { children: ReactNode }) {
   const [activeFileId, setActiveFileId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [lastSavedStatus, setLastSavedStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'info' }[]>([]);
 
@@ -104,7 +106,9 @@ export function FileProvider({ children }: { children: ReactNode }) {
         const isDifferent = JSON.stringify(prev) !== JSON.stringify(fetchedFiles);
         return isDifferent ? fetchedFiles : prev;
       });
+      setIsLoading(false);
     }, (error) => {
+      setIsLoading(false);
       handleFirestoreError(error, OperationType.LIST, 'notes');
     });
 
@@ -133,10 +137,20 @@ export function FileProvider({ children }: { children: ReactNode }) {
     };
 
     try {
+      // Optimistic update
+      setFiles(prev => [newFile, ...prev]);
+      setOpenFileIds(prev => prev.includes(id) ? prev : [...prev, id]);
+      setActiveFileId(id);
+      navigate(`/file/${id}`);
+
       await setDoc(doc(db, 'notes', id), newFile);
-      openFile(id);
       showToast("New file created!", "success");
     } catch (error) {
+      // Rollback on error
+      setFiles(prev => prev.filter(f => f.id !== id));
+      setOpenFileIds(prev => prev.filter(oid => oid !== id));
+      setActiveFileId(prev => prev === id ? '' : prev);
+      navigate('/');
       showToast("Failed to create file. Check your connection.", "error");
     }
   };
@@ -303,7 +317,7 @@ export function FileProvider({ children }: { children: ReactNode }) {
     <FileContext.Provider value={{
       files, setFiles, openFileIds, setOpenFileIds, activeFileId, setActiveFileId,
       searchQuery, setSearchQuery, activeFile, openFiles, filteredFiles,
-      isSaving, lastSavedStatus, handleCreateFile, executeDelete, handleSave,
+      isSaving, isLoading, lastSavedStatus, handleCreateFile, executeDelete, handleSave,
       closeTab, openFile, handleRename, downloadFile, showToast, toasts
     }}>
       {children}

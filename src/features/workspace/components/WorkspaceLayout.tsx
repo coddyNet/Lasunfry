@@ -14,12 +14,14 @@ import { Descendant } from 'slate';
 
 import { ShareModal } from './ShareModal';
 import { StatusBar } from 'components/StatusBar';
+import { Skeleton } from 'components/Skeleton';
 
 export function WorkspaceLayout() {
   const [hoveredUrl, setHoveredUrl] = useState<string | null>(null);
   const { 
     files, setFiles, activeFileId, activeFile, 
-    handleSave, showToast, toasts, downloadFile, executeDelete, lastSavedStatus
+    handleSave, showToast, toasts, downloadFile, executeDelete, lastSavedStatus,
+    isLoading
   } = useFile();
   const { formattingSettings, updateFormattingSettings, editorFontSize } = useTheme();
 
@@ -202,11 +204,26 @@ export function WorkspaceLayout() {
           setHoveredUrl={setHoveredUrl}
         />
 
-        <main className="relative flex flex-1 flex-col bg-transparent">
-          <TabBar />
+        <main className="relative flex flex-1 flex-col bg-transparent w-full overflow-hidden">
+          <TabBar onShare={() => setIsShareModalOpen(true)} />
 
           <div className="flex flex-1 overflow-hidden relative bg-white/20 dark:bg-slate-950/20">
-            {!activeFile ? (
+            {isLoading ? (
+              <div className="flex-1 flex flex-col p-6 lg:p-10 max-w-4xl mx-auto w-full">
+                <div className="flex items-center gap-3 mb-10">
+                  <Skeleton className="h-10 w-48" />
+                  <Skeleton variant="circle" className="h-10 w-10 shrink-0" />
+                </div>
+                <div className="space-y-6">
+                  <Skeleton variant="text" className="h-5 w-3/4" />
+                  <Skeleton variant="text" className="h-5 w-1/2" />
+                  <Skeleton variant="text" className="h-5 w-5/6" />
+                  <Skeleton className="h-64 w-full rounded-2xl" />
+                  <Skeleton variant="text" className="h-5 w-2/3" />
+                  <Skeleton variant="text" className="h-5 w-3/4" />
+                </div>
+              </div>
+            ) : !activeFile ? (
               <div className="flex h-full w-full flex-col items-center justify-center text-center p-8">
                 <div className="mb-4 rounded-full bg-slate-100 p-6 dark:bg-slate-800">
                   <FileText size={48} className="text-slate-300" />
@@ -257,7 +274,7 @@ export function WorkspaceLayout() {
                       lastSavedStatus === 'saved' ? 'bg-green-500' :
                       lastSavedStatus === 'error' ? 'bg-red-500' : 'bg-slate-300'
                     }`}></span>
-                    <span className="sm:inline">
+                    <span className="hidden sm:inline">
                       {lastSavedStatus === 'saving' ? 'SAVING...' :
                        lastSavedStatus === 'saved' ? 'SAVED' :
                        lastSavedStatus === 'error' ? 'ERROR' : 'SYNCED'}
@@ -281,7 +298,7 @@ export function WorkspaceLayout() {
                     ) : '—'}
                   </span>
                   <span className="hidden md:inline mx-1 md:mx-2 h-3 w-px bg-slate-200 dark:bg-slate-800"></span>
-                  <span className="hidden md:inline flex items-center gap-1 font-mono text-[9px] md:text-[10px]">
+                  <span className="hidden md:flex items-center gap-1 font-mono text-[9px] md:text-[10px]">
                     <span className="opacity-60">CREATED AT: </span>
                     {activeFile?.createdAt
                       ? format(new Date(activeFile.createdAt), 'MMM d, yyyy • h:mm a')
@@ -289,7 +306,7 @@ export function WorkspaceLayout() {
                   </span>
                   <span className="hidden md:inline mx-1 md:mx-2 h-3 w-px bg-slate-200 dark:bg-slate-800"></span>
                   <span className="flex items-center gap-1 font-mono text-[8px] md:text-[10px]">
-                    <span className="hidden md:inline opacity-60">CREATED AT: </span>
+                    <span className="hidden md:inline opacity-60">VERSION: </span>
                     <span className="text-slate-900 dark:text-white font-bold tracking-wider opacity-60">v1.0.3</span>
                   </span>
                 </div>
