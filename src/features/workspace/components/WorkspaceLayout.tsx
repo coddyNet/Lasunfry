@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { format } from 'date-fns';
 import { useFile } from '../context/FileContext';
 import { useTheme } from 'features/theme';
 import { TopNav } from '../components/TopNav';
@@ -12,8 +13,10 @@ import { serializeMarkdown } from 'features/editor';
 import { Descendant } from 'slate';
 
 import { ShareModal } from './ShareModal';
+import { StatusBar } from 'components/StatusBar';
 
 export function WorkspaceLayout() {
+  const [hoveredUrl, setHoveredUrl] = useState<string | null>(null);
   const { 
     files, setFiles, activeFileId, activeFile, 
     handleSave, showToast, toasts, downloadFile, executeDelete, lastSavedStatus
@@ -177,7 +180,11 @@ export function WorkspaceLayout() {
         </div>
       )}
 
-      <TopNav isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
+      <TopNav 
+        isSidebarOpen={isSidebarOpen} 
+        setIsSidebarOpen={setIsSidebarOpen} 
+        setHoveredUrl={setHoveredUrl}
+      />
 
       <div className="flex flex-1 overflow-hidden relative">
         <Sidebar 
@@ -192,6 +199,7 @@ export function WorkspaceLayout() {
           submitRename={handleRenameWrapper}
           setContextMenu={setContextMenu}
           isRenamingRef={isRenamingRef}
+          setHoveredUrl={setHoveredUrl}
         />
 
         <main className="relative flex flex-1 flex-col bg-transparent">
@@ -231,47 +239,63 @@ export function WorkspaceLayout() {
           </div>
 
           <footer className="flex items-center justify-between border-t border-slate-100 bg-white/40 px-3 md:px-6 py-2 text-[10px] md:text-[11px] font-medium text-slate-400 backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-950/40">
-            <div className="flex items-center gap-2 md:gap-4 font-mono text-[9px] md:text-[10px] tracking-wider uppercase">
-              <span className="opacity-60 text-slate-500 dark:text-slate-400">CHARACTER:</span>
-              <span className="text-slate-900 dark:text-white font-bold">{stats.chars.toLocaleString()}</span>
-              <span className="mx-0.5 md:mx-1 h-2 w-px bg-slate-200 dark:bg-slate-800"></span>
-              <span className="opacity-60 text-slate-500 dark:text-slate-400">WORD:</span>
-              <span className="text-slate-900 dark:text-white font-bold">{stats.words}</span>
-            </div>
-            <div className="flex items-center gap-2 md:gap-4">
-              <span className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 rounded-full ${
-                  lastSavedStatus === 'saving' ? 'bg-amber-500 animate-pulse' :
-                  lastSavedStatus === 'saved' ? 'bg-green-500' :
-                  lastSavedStatus === 'error' ? 'bg-red-500' : 'bg-slate-300'
-                }`}></span>
-                <span className="hidden sm:inline">
-                  {lastSavedStatus === 'saving' ? 'SAVING...' :
-                   lastSavedStatus === 'saved' ? 'SAVED' :
-                   lastSavedStatus === 'error' ? 'ERROR' : 'SYNCED'}
-                </span>
-              </span>
+            {activeFile ? (
+              <>
+                <div className="flex items-center gap-2 md:gap-4 font-mono text-[9px] md:text-[10px] tracking-wider uppercase">
+                  <span className="opacity-60 text-slate-500 dark:text-slate-400">CHARACTER:</span>
+                  <span className="text-slate-900 dark:text-white font-bold">{stats.chars.toLocaleString()}</span>
+                  <span className="mx-0.5 md:mx-1 h-2 w-px bg-slate-200 dark:bg-slate-800"></span>
+                  <span className="opacity-60 text-slate-500 dark:text-slate-400">WORD:</span>
+                  <span className="text-slate-900 dark:text-white font-bold">{stats.words}</span>
+                </div>
+                <div className="flex items-center gap-2 md:gap-4">
+                  <span className="flex items-center gap-1.5">
+                    <span className={`h-1.5 w-1.5 rounded-full ${
+                      lastSavedStatus === 'saving' ? 'bg-amber-500 animate-pulse' :
+                      lastSavedStatus === 'saved' ? 'bg-green-500' :
+                      lastSavedStatus === 'error' ? 'bg-red-500' : 'bg-slate-300'
+                    }`}></span>
+                    <span className="hidden sm:inline">
+                      {lastSavedStatus === 'saving' ? 'SAVING...' :
+                       lastSavedStatus === 'saved' ? 'SAVED' :
+                       lastSavedStatus === 'error' ? 'ERROR' : 'SYNCED'}
+                    </span>
+                  </span>
 
-              <span className="flex items-center gap-1.5 opacity-80 font-mono text-[9px] md:text-[10px]">
-                <History size={10} className="md:w-3 md:h-3" />
-                <span className="hidden xs:inline">SYNC:</span>
-                {activeFile?.lastSaved
-                  ? `${new Date(activeFile.lastSaved).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} ${new Date(activeFile.lastSaved).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                  : '—'}
-              </span>
-              <span className="hidden sm:inline mx-1 md:mx-2 h-3 w-px bg-slate-200 dark:bg-slate-800"></span>
-              <span className="hidden sm:inline flex items-center gap-1 font-mono text-[9px] md:text-[10px]">
-                <span className="opacity-60">CREATED:</span>
-                {activeFile?.createdAt
-                  ? `${new Date(activeFile.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} ${new Date(activeFile.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                  : '—'}
-              </span>
-            </div>
+                  <span className="flex items-center gap-1.5 opacity-80 font-mono text-[9px] md:text-[10px]">
+                    <History size={10} className="md:w-3 md:h-3" />
+                    <span className="hidden xs:inline">SYNC:</span>
+                    {activeFile?.lastSaved
+                      ? format(new Date(activeFile.lastSaved), 'MMM d, yyyy • h:mm a')
+                      : '—'}
+                  </span>
+                  <span className="hidden sm:inline mx-1 md:mx-2 h-3 w-px bg-slate-200 dark:bg-slate-800"></span>
+                  <span className="hidden sm:inline flex items-center gap-1 font-mono text-[9px] md:text-[10px]">
+                    <span className="opacity-60">CREATED AT: </span>
+                    {activeFile?.createdAt
+                      ? format(new Date(activeFile.createdAt), 'MMM d, yyyy • h:mm a')
+                      : '—'}
+                  </span>
+                  <span className="hidden lg:inline mx-1 md:mx-2 h-3 w-px bg-slate-200 dark:bg-slate-800"></span>
+                  <span className="hidden lg:inline flex items-center gap-1 font-mono text-[9px] md:text-[10px]">
+                    <span className="text-slate-900 dark:text-white font-bold tracking-wider opacity-60">v1.0.3</span>
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="flex w-full justify-end">
+                <span className="flex items-center gap-1 font-mono text-[9px] md:text-[10px]">
+                  <span className="text-slate-900 dark:text-white font-bold tracking-wider opacity-60">v1.0.3</span>
+                </span>
+              </div>
+            )}
           </footer>
         </main>
       </div>
 
       <Branding />
+
+      <StatusBar url={hoveredUrl} />
 
       <div className="fixed bottom-14 right-4 z-[100] flex flex-col gap-2">
         <AnimatePresence>
