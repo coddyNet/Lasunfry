@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, useMemo, ReactNode } from 'react';
-import { db, collection, query, where, onSnapshot, doc, setDoc, deleteDoc, handleFirestoreError, OperationType } from 'config/firebase';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback, ReactNode, useRef } from 'react';
+import { db, collection, query, where, onSnapshot, doc, setDoc, deleteDoc, handleFirestoreError, OperationType, getDocs, getDocFromServer, updateDoc, arrayUnion, arrayRemove } from 'config/firebase';
 import { useAuth } from 'features/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Descendant } from 'slate';
@@ -56,6 +56,7 @@ export function FileProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [lastSavedStatus, setLastSavedStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'info' }[]>([]);
+  const isCloningRef = useRef<string | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -67,13 +68,59 @@ export function FileProvider({ children }: { children: ReactNode }) {
 
   // Route -> State Sync
   useEffect(() => {
-    if (!user) return;
+    if (!user || isLoading) return;
     const match = location.pathname.match(/^\/file\/(.+)$/);
     if (match) {
       const id = match[1];
-      if (id !== activeFileId) {
-        setOpenFileIds(prev => prev.includes(id) ? prev : [...prev, id]);
-        setActiveFileId(id);
+      const existingFile = files.find(f => f.id === id);
+      
+      if (!existingFile) {
+        // Not in user's known files. Could be a race condition OR a shared link.
+        if (isCloningRef.current === id) return;
+        isCloningRef.current = id;
+        
+        getDocFromServer(doc(db, 'notes', id)).then(async (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as File;
+            if (data.userId !== user.uid) {
+              // It's a shared file -> Clone it
+              const newId = Math.random().toString(36).substr(2, 9);
+              const newFile: File = {
+                id: newId,
+                userId: user.uid,
+                name: `${data.name} (Shared)`,
+                content: data.content,
+                type: data.type,
+                createdAt: Date.now(),
+                lastSaved: Date.now(),
+              };
+              
+              await setDoc(doc(db, 'notes', newId), newFile);
+              showToast("Shared file cloned to your workspace!", "success");
+              navigate(`/file/${newId}`, { replace: true });
+            } else {
+              // It's our own file (snapshot hasn't caught up)
+              if (id !== activeFileId) {
+                setOpenFileIds(prev => prev.includes(id) ? prev : [...prev, id]);
+                setActiveFileId(id);
+              }
+            }
+          } else {
+             showToast("File not found.", "error");
+             navigate('/', { replace: true });
+          }
+        }).catch((err) => {
+          console.error("Error fetching shared file:", err);
+          showToast("Failed to open shared file.", "error");
+          navigate('/', { replace: true });
+        }).finally(() => {
+          isCloningRef.current = null;
+        });
+      } else {
+        if (id !== activeFileId) {
+          setOpenFileIds(prev => prev.includes(id) ? prev : [...prev, id]);
+          setActiveFileId(id);
+        }
       }
     } else if (location.pathname === '/') {
       if (activeFileId !== '' || openFileIds.length > 0) {
@@ -81,7 +128,7 @@ export function FileProvider({ children }: { children: ReactNode }) {
         setOpenFileIds([]);
       }
     }
-  }, [location.pathname, user]);
+  }, [location.pathname, user, isLoading, files.length, activeFileId]);
 
   // Firestore Sync
   useEffect(() => {

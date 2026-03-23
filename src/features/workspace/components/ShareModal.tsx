@@ -28,7 +28,6 @@ export function ShareModal({ isOpen, onClose, file }: ShareModalProps) {
     if (!qrRef.current || !file) return;
     try {
       setIsDownloading(true);
-      // Use html-to-image which natively supports rendering SVG children properly even off-screen
       const dataUrl = await toPng(qrRef.current, { cacheBust: true, pixelRatio: 2 });
       const link = document.createElement('a');
       link.href = dataUrl;

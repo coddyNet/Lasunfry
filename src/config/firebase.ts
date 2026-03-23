@@ -10,7 +10,11 @@ import {
   query, 
   where, 
   getDocFromServer,
-  orderBy
+  orderBy,
+  getDocs,
+  updateDoc,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -69,4 +73,4 @@ async function testConnection() {
 testConnection();
 
 export { onAuthStateChanged, signInWithPopup, type User };
-export { collection, doc, setDoc, deleteDoc, onSnapshot, query, where, orderBy };
+export { collection, doc, setDoc, deleteDoc, onSnapshot, query, where, orderBy, getDocs, getDocFromServer, updateDoc, arrayUnion, arrayRemove };

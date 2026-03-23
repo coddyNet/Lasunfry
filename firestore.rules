@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     // ===============================================================
-    // Assumed Data Model
+    // Data Model
     // ===============================================================
     //
     // Collection: notes
@@ -16,6 +16,7 @@ service cloud.firestore {
     //   - type: string (required) - 'txt' or 'md'
     //   - lastSaved: number (required) - Timestamp
     //   - createdAt: number (required) - Timestamp (immutable)
+    //   - sharedWith: list (optional) - Array of user UIDs
     //
     // ===============================================================
 
@@ -33,6 +34,12 @@ service cloud.firestore {
     
     function isDocOwner() {
       return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isSharedWith() {
+      return isAuthenticated() && 
+             resource.data.keys().hasAny(['sharedWith']) &&
+             request.auth.uid in resource.data.sharedWith;
     }
     
     function isValidNote(data) {
@@ -58,28 +65,30 @@ service cloud.firestore {
     // ===============================================================
 
     match /notes/{noteId} {
-      // Users can only list their own notes
-      allow read: if isDocOwner() || isAdmin();
+      // Any authenticated user can read any note (needed for link-sharing cloning)
+      allow read: if isAuthenticated();
       
       // Users can only create notes for themselves
       allow create: if isAuthenticated() && 
                       isValidNote(request.resource.data) && 
                       request.resource.data.userId == request.auth.uid;
       
-      // Users can only update their own notes, and createdAt must be immutable
+      // Owner can update their own notes (createdAt is immutable)
       allow update: if isDocOwner() && 
                       isValidNote(request.resource.data) &&
                       request.resource.data.userId == resource.data.userId &&
                       request.resource.data.createdAt == resource.data.createdAt;
       
-      // Users can only delete their own notes
+      // Only the owner can delete their notes
       allow delete: if isDocOwner() || isAdmin();
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      // Any authenticated user can read user profiles (needed for share-by-email lookup)
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isOwner(userId) && request.resource.data.role == 'user';
       allow update: if isAuthenticated() && isOwner(userId) && request.resource.data.role == resource.data.role;
     }
   }
 }
+

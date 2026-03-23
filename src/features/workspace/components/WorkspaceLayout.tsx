@@ -151,7 +151,7 @@ export function WorkspaceLayout() {
       <ShareModal 
         isOpen={isShareModalOpen} 
         onClose={() => setIsShareModalOpen(false)} 
-        file={activeFile || null} 
+        file={activeFile || null}
       />
 
       {confirmDeleteId && (
