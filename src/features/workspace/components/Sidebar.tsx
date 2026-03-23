@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Plus, FileText } from 'lucide-react';
+import { Search, Plus, FileText, MoreVertical } from 'lucide-react';
 import { useFile, File as FileType } from '../context/FileContext';
 import { Tooltip } from 'components/Tooltip';
 
@@ -15,6 +15,7 @@ interface SidebarProps {
   submitRename: () => void;
   setContextMenu: (val: { fileId: string; x: number; y: number } | null) => void;
   isRenamingRef: React.MutableRefObject<boolean>;
+  setHoveredUrl: (url: string | null) => void;
 }
 
 export function Sidebar({
@@ -28,7 +29,8 @@ export function Sidebar({
   startRenaming,
   submitRename,
   setContextMenu,
-  isRenamingRef
+  isRenamingRef,
+  setHoveredUrl
 }: SidebarProps) {
   const { searchQuery, setSearchQuery, filteredFiles, handleCreateFile, activeFileId, openFile } = useFile();
 
@@ -126,21 +128,39 @@ export function Sidebar({
                         />
                       </div>
                     ) : (
-                      <button
-                        onClick={() => {
-                          openFile(file.id);
-                          if (isMobile) setIsSidebarOpen(false);
-                        }}
-                        onDoubleClick={(e) => startRenaming(file, e, 'sidebar')}
-                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                      <div
+                        className={`group/item relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 cursor-pointer ${
                           activeFileId === file.id
                             ? 'bg-google-blue text-white shadow-md shadow-google-blue/20'
                             : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
                         }`}
+                        onClick={() => {
+                          openFile(file.id);
+                          if (isMobile) setIsSidebarOpen(false);
+                        }}
+                        onMouseEnter={() => setHoveredUrl(`${window.location.origin}/file/${file.id}`)}
+                        onMouseLeave={() => setHoveredUrl(null)}
                       >
                         <FileText size={18} />
                         <span className="truncate flex-1 text-left">{file.name.replace(/\.(txt|md)$/i, '')}</span>
-                      </button>
+                        
+                        <div className={`flex-shrink-0 transition-opacity duration-200 ${activeFileId === file.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover/item:opacity-100'}`}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setContextMenu({ fileId: file.id, x: rect.left, y: rect.bottom + 5 });
+                            }}
+                            className={`p-1 rounded-md transition-colors ${
+                              activeFileId === file.id 
+                                ? 'hover:bg-white/20 text-white' 
+                                : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 dark:text-slate-500'
+                            }`}
+                          >
+                            <MoreVertical size={16} />
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 ))}

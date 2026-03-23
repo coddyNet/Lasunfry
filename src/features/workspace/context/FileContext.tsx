@@ -74,8 +74,9 @@ export function FileProvider({ children }: { children: ReactNode }) {
         setActiveFileId(id);
       }
     } else if (location.pathname === '/') {
-      if (activeFileId !== '') {
+      if (activeFileId !== '' || openFileIds.length > 0) {
         setActiveFileId('');
+        setOpenFileIds([]);
       }
     }
   }, [location.pathname, user]);
@@ -103,17 +104,12 @@ export function FileProvider({ children }: { children: ReactNode }) {
         const isDifferent = JSON.stringify(prev) !== JSON.stringify(fetchedFiles);
         return isDifferent ? fetchedFiles : prev;
       });
-
-      if (fetchedFiles.length > 0 && openFileIds.length === 0) {
-        setOpenFileIds([fetchedFiles[0].id]);
-        setActiveFileId(fetchedFiles[0].id);
-      }
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'notes');
     });
 
     return () => unsubscribe();
-  }, [user, isAuthReady, openFileIds.length]);
+  }, [user, isAuthReady]);
 
   const activeFile = useMemo(() => files.find(f => f.id === activeFileId), [files, activeFileId]);
   const openFiles = useMemo(() => files.filter(f => openFileIds.includes(f.id)), [files, openFileIds]);
