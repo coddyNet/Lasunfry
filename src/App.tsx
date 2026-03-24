@@ -7,10 +7,11 @@ import { LoginPage } from 'pages/LoginPage';
 import { WorkspacePage } from 'pages/WorkspacePage';
 import { NotFoundPage } from 'pages/NotFoundPage';
 
+import { OnboardingProvider } from 'components/Onboarding/OnboardingContext';
+
 function AppRoutes() {
   return (
     <Routes>
-      {/* Public Guest Routes */}
       <Route
         path="/login"
         element={
@@ -20,14 +21,11 @@ function AppRoutes() {
         }
       />
 
-      {/* Protected Workspace Routes */}
       <Route
         path="/"
         element={
           <AuthGuard>
-            <FileProvider>
-              <WorkspacePage />
-            </FileProvider>
+            <WorkspacePage />
           </AuthGuard>
         }
       />
@@ -35,14 +33,11 @@ function AppRoutes() {
         path="/file/:fileId"
         element={
           <AuthGuard>
-            <FileProvider>
-              <WorkspacePage />
-            </FileProvider>
+            <WorkspacePage />
           </AuthGuard>
         }
       />
 
-      {/* 404 Route */}
       <Route path="/unknown" element={<NotFoundPage />} />
       <Route path="*" element={<Navigate to="/unknown" replace />} />
     </Routes>
@@ -53,7 +48,11 @@ export function App() {
   return (
     <AuthProvider>
       <ThemeProvider>
-        <AppRoutes />
+        <FileProvider>
+          <OnboardingProvider>
+            <AppRoutes />
+          </OnboardingProvider>
+        </FileProvider>
       </ThemeProvider>
     </AuthProvider>
   );

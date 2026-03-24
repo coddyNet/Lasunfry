@@ -284,7 +284,7 @@ export function FileProvider({ children }: { children: ReactNode }) {
 
     const timer = setTimeout(() => {
       handleSave();
-    }, 5000);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [activeFile?.content, user]);
 

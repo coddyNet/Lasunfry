@@ -15,6 +15,8 @@ import { Descendant } from 'slate';
 import { ShareModal } from './ShareModal';
 import { StatusBar } from 'components/StatusBar';
 import { Skeleton } from 'components/Skeleton';
+import { OnboardingTour } from 'components/Onboarding/OnboardingTour';
+import { useOnboarding } from 'components/Onboarding/OnboardingContext';
 
 export function WorkspaceLayout() {
   const [hoveredUrl, setHoveredUrl] = useState<string | null>(null);
@@ -35,6 +37,8 @@ export function WorkspaceLayout() {
   const [contextMenu, setContextMenu] = useState<{ fileId: string; x: number; y: number } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+
+  const { isActive: isTourActive, currentStep, nextStep, prevStep, endTour, startTour, completeStep } = useOnboarding();
 
   const isRenamingRef = useRef(false);
 
@@ -154,6 +158,14 @@ export function WorkspaceLayout() {
         file={activeFile || null}
       />
 
+      {/* <OnboardingTour
+        isActive={isTourActive}
+        currentStep={currentStep}
+        onNext={nextStep}
+        onPrev={prevStep}
+        onClose={endTour}
+      /> */}
+
       {confirmDeleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
@@ -186,6 +198,8 @@ export function WorkspaceLayout() {
         isSidebarOpen={isSidebarOpen} 
         setIsSidebarOpen={setIsSidebarOpen} 
         setHoveredUrl={setHoveredUrl}
+        onAction={completeStep}
+        onStartTour={startTour}
       />
 
       <div className="flex flex-1 overflow-hidden relative">
@@ -202,6 +216,7 @@ export function WorkspaceLayout() {
           setContextMenu={setContextMenu}
           isRenamingRef={isRenamingRef}
           setHoveredUrl={setHoveredUrl}
+          onAction={completeStep}
         />
 
         <main className="relative flex flex-1 flex-col bg-transparent w-full overflow-hidden">
@@ -240,7 +255,6 @@ export function WorkspaceLayout() {
                     setFiles(prev => prev.map(f =>
                       f.id === activeFile.id ? { ...f, content: newContent } : f
                     ));
-                    handleSave(newContent, activeFile.id);
                   }}
                   fontSize={editorFontSize}
                   activeFileId={activeFile.id}
@@ -249,7 +263,7 @@ export function WorkspaceLayout() {
                   onSettingsChange={updateFormattingSettings}
                   onDownload={downloadFile}
                   onShare={() => setIsShareModalOpen(true)}
-
+                  onAction={() => completeStep(2)}
                 />
               </div>
             )}
@@ -323,7 +337,7 @@ export function WorkspaceLayout() {
       </div>
 
       <div className="hidden sm:block">
-        <Branding />
+        <Branding onStartTour={startTour} />
       </div>
 
       <div className="hidden md:block">

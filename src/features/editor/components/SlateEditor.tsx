@@ -238,30 +238,32 @@ const Element = (props: RenderElementProps) => {
 
 const Leaf = ({ attributes, children, leaf }: any) => {
   let content = children;
+  
   if (leaf.bold) content = <span className="font-bold">{content}</span>;
   if (leaf.italic) content = <em className="italic">{content}</em>;
   if (leaf.code) content = <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono text-sm">{content}</code>;
   if (leaf.underline) content = <u className="underline">{content}</u>;
   if (leaf.strikethrough) content = <s className="text-slate-500 line-through">{content}</s>;
 
-  if (leaf.grammarError) {
-    content = (
-      <span
-        className="bg-pink-100/50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 shadow-[inset_0_-2px_0_0_#F472B6] dark:shadow-[inset_0_-2px_0_0_#EC4899] cursor-pointer transition-colors hover:bg-pink-200/50 dark:hover:bg-pink-800/50"
-        onMouseEnter={(e) => {
-          e.stopPropagation();
-          const event = new CustomEvent('openGrammarMatch', {
-            detail: { match: leaf.matchData, rect: e.currentTarget.getBoundingClientRect() }
-          });
-          window.dispatchEvent(event);
-        }}
-      >
-        {content}
-      </span>
-    );
-  }
+  const grammarClass = leaf.grammarError 
+    ? "bg-pink-100/50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 shadow-[inset_0_-2px_0_0_#F472B6] dark:shadow-[inset_0_-2px_0_0_#EC4899] cursor-pointer transition-colors hover:bg-pink-200/50 dark:hover:bg-pink-800/50" 
+    : "";
 
-  return <span {...attributes}>{content}</span>;
+  return (
+    <span 
+      {...attributes} 
+      className={grammarClass}
+      onMouseEnter={leaf.grammarError ? (e) => {
+        e.stopPropagation();
+        const event = new CustomEvent('openGrammarMatch', {
+          detail: { match: leaf.matchData, rect: e.currentTarget.getBoundingClientRect() }
+        });
+        window.dispatchEvent(event);
+      } : undefined}
+    >
+      {content}
+    </span>
+  );
 };
 
 function ToolbarButton({ icon, title, onClick, active, onPointerDown, className = "", variant = 'default', forceShow = false }: any) {
@@ -320,6 +322,7 @@ interface SlateEditorProps {
   onSettingsChange: (settings: FormattingSettings) => void;
   onDownload?: () => void;
   onShare?: () => void;
+  onAction?: (step: number) => void;
 }
 
 export function SlateEditor({
@@ -331,7 +334,8 @@ export function SlateEditor({
   formattingSettings,
   onSettingsChange,
   onDownload,
-  onShare
+  onShare,
+  onAction
 }: SlateEditorProps) {
   const renderElement = useCallback((props: RenderElementProps) => <Element {...props} />, []);
   const renderLeaf = useCallback((props: RenderLeafProps) => <Leaf {...props} />, []);
@@ -459,27 +463,43 @@ export function SlateEditor({
     isCheckingRef.current = true;
     if (!silent) setIsCorrecting(true);
 
-    grammarMatches.forEach(m => m.rangeRef.unref());
-    setGrammarMatches([]);
-    setActiveGrammarMatch(null);
-
-    const newMatches: GrammarMatch[] = [];
+    const blocksToProcess: { path: Path; text: string; node: Node }[] = [];
+    
+    // Synchronously collect blocks
+    for (const [blockNode, blockPath] of Editor.nodes(editor, {
+      match: n => SlateElement.isElement(n) && Editor.isBlock(editor, n as SlateElement)
+    })) {
+      const text = Node.string(blockNode);
+      if (text.trim()) {
+        // Must clone blockPath to avoid generator mutating the reference
+        blocksToProcess.push({ path: [...blockPath], text, node: blockNode });
+      }
+    }
 
     try {
-      for (const [blockNode, blockPath] of Editor.nodes(editor, {
-        match: n => SlateElement.isElement(n) && Editor.isBlock(editor, n as SlateElement)
-      })) {
-        const text = Node.string(blockNode);
-        if (!text.trim()) continue;
+      // Async fetch without blocking iteration mapping
+      const results = await Promise.all(
+        blocksToProcess.map(async (b) => {
+          const matches = await checkGrammarMatches(b.text);
+          return { ...b, matches };
+        })
+      );
 
-        const ltMatches = await checkGrammarMatches(text);
+      const newMatches: GrammarMatch[] = [];
 
-        for (const m of ltMatches) {
+      // Only iterate over returned results, checking against CURRENT Slate reality
+      for (const res of results) {
+        // Validation: If the block no longer exists or the text changed, discard matches!
+        if (!Node.has(editor, res.path)) continue;
+        const currentBlock = Node.get(editor, res.path);
+        if (Node.string(currentBlock) !== res.text) continue;
+
+        for (const m of res.matches) {
            let currentOffset = 0;
            let anchorPoint: Point | null = null;
            let focusPoint: Point | null = null;
 
-           for (const [textNode, textPath] of Editor.nodes(editor, { at: blockPath, match: Text.isText })) {
+           for (const [textNode, textPath] of Editor.nodes(editor, { at: res.path, match: Text.isText })) {
              const nodeLength = (textNode as any).text.length;
 
              if (!anchorPoint && m.offset < currentOffset + nodeLength) {
@@ -494,18 +514,24 @@ export function SlateEditor({
 
            if (anchorPoint && focusPoint && m.replacements.length > 0) {
               const matchRange = { anchor: anchorPoint, focus: focusPoint };
-              const rangeRef = Editor.rangeRef(editor, matchRange, { affinity: 'forward' });
-              newMatches.push({
-                id: Math.random().toString(36).substring(7),
-                rangeRef,
-                replacements: m.replacements.map(r => r.value),
-                message: m.message,
-                shortMessage: m.shortMessage
-              });
+              try {
+                const rangeRef = Editor.rangeRef(editor, matchRange, { affinity: 'forward' });
+                newMatches.push({
+                  id: Math.random().toString(36).substring(7),
+                  rangeRef,
+                  replacements: m.replacements.map(r => r.value),
+                  message: m.message,
+                  shortMessage: m.shortMessage
+                });
+              } catch (e) {
+                console.warn("Skipping invalid range ref creation");
+              }
            }
         }
       }
 
+      // Cleanup old matches only AFTER successfully plotting new ones to prevent flicker
+      grammarMatches.forEach(m => m.rangeRef.unref());
       setGrammarMatches(newMatches);
 
       if (!silent) {
@@ -567,11 +593,11 @@ export function SlateEditor({
     return initialContent || getInitialSlateValue();
   });
 
-  const hasInitializedRef = useRef(false);
+  const lastFileIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (hasInitializedRef.current) return;
-    hasInitializedRef.current = true;
+    if (activeFileId === lastFileIdRef.current) return;
+    lastFileIdRef.current = activeFileId;
 
     let newValue: Descendant[];
     if (typeof initialContent === 'string') {
@@ -599,7 +625,7 @@ export function SlateEditor({
     editor.history = { undos: [], redos: [] };
     editor.onChange();
     setValue(newValue);
-  }, [editor, initialContent]);
+  }, [editor, initialContent, activeFileId]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     const { selection } = editor;
@@ -641,7 +667,7 @@ export function SlateEditor({
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden w-full">
+    <div id="tour-editor" className="flex flex-1 flex-col overflow-hidden w-full">
       <Slate
         editor={editor}
         initialValue={value}
@@ -654,6 +680,10 @@ export function SlateEditor({
             checkTimerRef.current = setTimeout(() => {
               runGrammarCheck(true);
             }, 2000);
+            
+            // Trigger tour action on first input
+            console.log("Tour: Editor input detected, calling onAction");
+            if (onAction) onAction(2);
           }
           setValue(val);
           
@@ -718,18 +748,26 @@ export function SlateEditor({
           <div className="hidden md:flex items-center gap-1 md:gap-2">
             {onShare && (
               <ToolbarButton 
+                id="tour-share-btn"
                 active={false}
                 icon={<Share2 size={16} className="text-slate-500" />} 
                 title="Share Link" 
-                onClick={onShare}
+                onClick={() => {
+                  if (onShare) onShare();
+                  if (onAction) onAction(3);
+                }}
               />
             )}
             {onDownload && (
               <ToolbarButton 
+                id="tour-download-btn"
                 active={false}
                 icon={<Download size={16} className="text-slate-500" />} 
                 title="Download Note" 
-                onClick={onDownload}
+                onClick={() => {
+                  if (onDownload) onDownload();
+                  if (onAction) onAction(4);
+                }}
               />
             )}
           </div>
@@ -742,7 +780,11 @@ export function SlateEditor({
               {onShare && (
                 <Tooltip title="Share Link" position="bottom">
                   <button 
-                    onClick={onShare}
+                    id="tour-share-btn"
+                    onClick={() => {
+                      if (onShare) onShare();
+                      if (onAction) onAction(3);
+                    }}
                     className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/60 bg-white/40 backdrop-blur-xl text-slate-500 hover:bg-white hover:text-google-blue dark:border-slate-700/60 dark:bg-slate-900/40 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition-all duration-300 shadow-sm hover:shadow-md active:scale-95"
                   >
                     <Share2 size={16} />
@@ -752,7 +794,10 @@ export function SlateEditor({
               {onDownload && (
                 <Tooltip title="Download Note" position="bottom">
                   <button 
-                    onClick={onDownload}
+                    onClick={() => {
+                      if (onDownload) onDownload();
+                      if (onAction) onAction(4);
+                    }}
                     className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/60 bg-white/40 backdrop-blur-xl text-slate-500 hover:bg-white hover:text-google-blue dark:border-slate-700/60 dark:bg-slate-900/40 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition-all duration-300 shadow-sm hover:shadow-md active:scale-95"
                   >
                     <Download size={16} />

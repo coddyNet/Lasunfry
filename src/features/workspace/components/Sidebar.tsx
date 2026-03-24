@@ -18,6 +18,7 @@ interface SidebarProps {
   setContextMenu: (val: { fileId: string; x: number; y: number } | null) => void;
   isRenamingRef: React.MutableRefObject<boolean>;
   setHoveredUrl: (url: string | null) => void;
+  onAction?: (step: number) => void;
 }
 
 export function Sidebar({
@@ -32,7 +33,8 @@ export function Sidebar({
   submitRename,
   setContextMenu,
   isRenamingRef,
-  setHoveredUrl
+  setHoveredUrl,
+  onAction
 }: SidebarProps) {
   const { searchQuery, setSearchQuery, filteredFiles, handleCreateFile, activeFileId, openFile, isLoading } = useFile();
 
@@ -77,11 +79,17 @@ export function Sidebar({
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400/80 dark:text-slate-500 transition-colors peer-focus:text-google-blue" size={16} />
                   <input
+                    id="tour-search"
                     className="peer h-9 w-full rounded-lg border border-transparent bg-slate-100 dark:bg-slate-900 pl-9 pr-4 text-[13px] font-medium text-slate-800 placeholder-slate-500 focus:border-google-blue focus:bg-white focus:outline-none dark:text-slate-200 dark:placeholder-slate-400 dark:focus:border-google-blue dark:focus:bg-slate-950 transition-all"
                     placeholder="Search notes..."
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => { if (onAction) onAction(5); }}
+                    onClick={() => { if (onAction) onAction(5); }}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      if (onAction) onAction(5);
+                    }}
                   />
                 </div>
               </div>
@@ -91,7 +99,11 @@ export function Sidebar({
                   <div className="flex items-center gap-1">
                     <Tooltip title="New File" position="top">
                       <button
-                        onClick={handleCreateFile}
+                        id="tour-create-btn"
+                        onClick={() => {
+                          handleCreateFile();
+                          if (onAction) onAction(1);
+                        }}
                         className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-google-blue shadow-sm hover:shadow-md hover:bg-slate-50 transition-all duration-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700"
                       >
                         <Plus size={16} />
@@ -203,7 +215,11 @@ export function Sidebar({
                         </div>
                         <p className="text-[12px] font-medium text-slate-500 dark:text-slate-400">No notes yet</p>
                         <button 
-                          onClick={handleCreateFile}
+                          id="tour-create-empty-state"
+                          onClick={() => {
+                            handleCreateFile();
+                            if (onAction) onAction(1);
+                          }}
                           className="mt-3 text-[11px] font-bold text-google-blue hover:underline opacity-80"
                         >
                           Create your first note

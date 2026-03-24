@@ -11,9 +11,11 @@ interface TopNavProps {
   isSidebarOpen: boolean;
   setIsSidebarOpen: (val: boolean) => void;
   setHoveredUrl: (url: string | null) => void;
+  onAction?: (step: number) => void;
+  onStartTour?: () => void;
 }
 
-export function TopNav({ isSidebarOpen, setIsSidebarOpen, setHoveredUrl }: TopNavProps) {
+export function TopNav({ isSidebarOpen, setIsSidebarOpen, setHoveredUrl, onAction, onStartTour }: TopNavProps) {
   const { user, logout } = useAuth();
   const { isDarkMode, setIsDarkMode } = useTheme();
   const { setActiveFileId, setOpenFileIds } = useFile();
@@ -35,7 +37,15 @@ export function TopNav({ isSidebarOpen, setIsSidebarOpen, setHoveredUrl }: TopNa
         <div className="flex items-center gap-4">
           <div 
             className="flex items-center gap-3 shrink-0 group cursor-pointer" 
-            onClick={() => { setActiveFileId(''); setOpenFileIds([]); navigate('/'); }}
+            onClick={() => { 
+              if (onStartTour) {
+                onStartTour();
+              } else {
+                setActiveFileId(''); 
+                setOpenFileIds([]); 
+                navigate('/');
+              }
+            }}
             onMouseEnter={() => setHoveredUrl(`${window.location.origin}/`)}
             onMouseLeave={() => setHoveredUrl(null)}
           >
@@ -50,7 +60,11 @@ export function TopNav({ isSidebarOpen, setIsSidebarOpen, setHoveredUrl }: TopNa
         <div className="flex items-center gap-2">
           <Tooltip title={isDarkMode ? "Toggle Light Mode" : "Toggle Dark Mode"} position="bottom">
             <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
+              id="tour-theme-toggle"
+              onClick={() => {
+                setIsDarkMode(!isDarkMode);
+                if (onAction) onAction(6);
+              }}
               className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-all duration-200"
             >
               {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
