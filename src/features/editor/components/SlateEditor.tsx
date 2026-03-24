@@ -1,33 +1,72 @@
-import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import {
-  Bold, Italic, Underline, Strikethrough, List, ListOrdered, ListTodo,
-  Loader2, Wand2, Sparkles, Trash2, Download, Share2
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { checkGrammarMatches } from '../services/languageToolService';
-import { rephraseWithGemini } from '../services/geminiRephraseService';
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  List,
+  ListOrdered,
+  ListTodo,
+  Loader2,
+  Wand2,
+  Sparkles,
+  Trash2,
+  Download,
+  Share2,
+} from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { checkGrammarMatches } from "../services/languageToolService";
+import { rephraseWithGemini } from "../services/geminiRephraseService";
 import {
-  Editor, Transforms, Element as SlateElement, createEditor,
-  Descendant, Node, Range, Path, Point, RangeRef, Text
-} from 'slate';
+  Editor,
+  Transforms,
+  Element as SlateElement,
+  createEditor,
+  Descendant,
+  Node,
+  Range,
+  Path,
+  Point,
+  RangeRef,
+  Text,
+} from "slate";
 import {
-  Slate, Editable, withReact, useSlate, RenderElementProps,
-  RenderLeafProps, useSlateStatic, ReactEditor
-} from 'slate-react';
-import { withHistory } from 'slate-history';
-import isHotkey from 'is-hotkey';
-import { deserializeMarkdown, serializeMarkdown, formatMarkdown, FormattingSettings, getInitialSlateValue, parseInlineMarkdown } from '../utils/slateHelpers';
-import { Tooltip } from 'components/Tooltip';
+  Slate,
+  Editable,
+  withReact,
+  useSlate,
+  RenderElementProps,
+  RenderLeafProps,
+  useSlateStatic,
+  ReactEditor,
+} from "slate-react";
+import { withHistory } from "slate-history";
+import isHotkey from "is-hotkey";
+import {
+  deserializeMarkdown,
+  serializeMarkdown,
+  formatMarkdown,
+  FormattingSettings,
+  getInitialSlateValue,
+  parseInlineMarkdown,
+} from "../utils/slateHelpers";
+import { Tooltip } from "components/Tooltip";
 
-const LIST_TYPES = ['numbered-list', 'bulleted-list'];
-const TEXT_ALIGN_TYPES = ['left', 'center', 'right', 'justify'];
+const LIST_TYPES = ["numbered-list", "bulleted-list"];
+const TEXT_ALIGN_TYPES = ["left", "center", "right", "justify"];
 
 const HOTKEYS: Record<string, string> = {
-  'mod+b': 'bold',
-  'mod+i': 'italic',
-  'mod+u': 'underline',
-  'mod+`': 'code',
-  'mod+shift+x': 'strikethrough',
+  "mod+b": "bold",
+  "mod+i": "italic",
+  "mod+u": "underline",
+  "mod+`": "code",
+  "mod+shift+x": "strikethrough",
 };
 
 // --- Helper Functions ---
@@ -35,12 +74,12 @@ const toggleBlock = (editor: Editor, format: string) => {
   const isActive = isBlockActive(
     editor,
     format,
-    TEXT_ALIGN_TYPES.includes(format) ? 'align' : 'type'
+    TEXT_ALIGN_TYPES.includes(format) ? "align" : "type",
   );
   const isList = LIST_TYPES.includes(format);
 
   Transforms.unwrapNodes(editor, {
-    match: n =>
+    match: (n) =>
       !Editor.isEditor(n) &&
       SlateElement.isElement(n) &&
       LIST_TYPES.includes((n as any).type) &&
@@ -52,9 +91,11 @@ const toggleBlock = (editor: Editor, format: string) => {
   if (TEXT_ALIGN_TYPES.includes(format)) {
     newProperties = { align: isActive ? undefined : format } as any;
   } else {
-    newProperties = { type: isActive ? 'paragraph' : isList ? 'list-item' : format } as any;
+    newProperties = {
+      type: isActive ? "paragraph" : isList ? "list-item" : format,
+    } as any;
   }
-  if (newProperties.type === 'check-list-item') {
+  if (newProperties.type === "check-list-item") {
     (newProperties as any).checked = false;
   }
   Transforms.setNodes<SlateElement>(editor, newProperties);
@@ -74,18 +115,18 @@ const toggleMark = (editor: Editor, format: string) => {
   }
 };
 
-const isBlockActive = (editor: Editor, format: string, blockType = 'type') => {
+const isBlockActive = (editor: Editor, format: string, blockType = "type") => {
   const { selection } = editor;
   if (!selection) return false;
 
   const [match] = Array.from(
     Editor.nodes(editor, {
       at: Editor.unhangRange(editor, selection),
-      match: n =>
+      match: (n) =>
         !Editor.isEditor(n) &&
         SlateElement.isElement(n) &&
         (n as any)[blockType] === format,
-    })
+    }),
   );
   return !!match;
 };
@@ -104,26 +145,29 @@ const withShortcuts = (editor: Editor) => {
     if (!selection || !Range.isCollapsed(selection)) return insertText(text);
 
     const anchor = selection.anchor;
-    
+
     // Look at the entire block string to support multi-node shortcuts (nesting)
     const [blockNode, blockPath] = Editor.above(editor, {
-      match: n => SlateElement.isElement(n) && !Editor.isInline(editor, n)
+      match: (n) => SlateElement.isElement(n) && !Editor.isInline(editor, n),
     }) || [editor, []];
 
-    const lineRange = { anchor: Editor.start(editor, blockPath), focus: anchor };
+    const lineRange = {
+      anchor: Editor.start(editor, blockPath),
+      focus: anchor,
+    };
     const lineText = Editor.string(editor, lineRange) + text;
 
     const applyMarksToFragment = (fragment: Descendant[], marks: string[]) => {
-      return fragment.map(node => {
+      return fragment.map((node) => {
         if (Text.isText(node)) {
           const newNode = { ...node };
-          marks.forEach(m => (newNode as any)[m] = true);
+          marks.forEach((m) => ((newNode as any)[m] = true));
           return newNode;
         }
         if (SlateElement.isElement(node)) {
           return {
             ...node,
-            children: applyMarksToFragment(node.children, marks)
+            children: applyMarksToFragment(node.children, marks),
           } as Descendant;
         }
         return node;
@@ -131,35 +175,71 @@ const withShortcuts = (editor: Editor) => {
     };
 
     const patterns = [
-      { reg: /(?<!\*)\*\*\*(.+?)\*\*\*(?!\*)$/, marks: ['bold', 'italic'], len: 3 },
-      { reg: /(?<!_)\_\_\_(.+?)___(?!\_)$/, marks: ['bold', 'italic'], len: 3 },
-      { reg: /(?<!~)~~(?![~])(.+?)(?<!~)~~(?![~])$/, marks: ['strikethrough'], len: 2 },
-      { reg: /(?<!\+)\+\+(?![+])(.+?)(?<!\+)\+\+(?![+])$/, marks: ['underline'], len: 2 },
-      { reg: /(?<!\*)\*\*(?!\*)(.+?)(?<!\*)\*\*(?!\*)$/, marks: ['bold'], len: 2 },
-      { reg: /(?<!\_)\_\_(?!\_)(.+?)(?<!\_)\_\_(?!\_)$/, marks: ['bold'], len: 2 },
-      { reg: /(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)$/, marks: ['italic'], len: 1 },
-      { reg: /(?<!_)_(?!\_)(.+?)(?<!_)_(?!\_)$/, marks: ['italic'], len: 1 },
-      { reg: /(?<!`)`(?![`])(.+?)(?<!`)`(?!`)$/, marks: ['code'], len: 1 },
+      {
+        reg: /(?<!\*)\*\*\*(.+?)\*\*\*(?!\*)$/,
+        marks: ["bold", "italic"],
+        len: 3,
+      },
+      { reg: /(?<!_)\_\_\_(.+?)___(?!\_)$/, marks: ["bold", "italic"], len: 3 },
+      {
+        reg: /(?<!~)~~(?![~])(.+?)(?<!~)~~(?![~])$/,
+        marks: ["strikethrough"],
+        len: 2,
+      },
+      {
+        reg: /(?<!\+)\+\+(?![+])(.+?)(?<!\+)\+\+(?![+])$/,
+        marks: ["underline"],
+        len: 2,
+      },
+      {
+        reg: /(?<!\*)\*\*(?!\*)(.+?)(?<!\*)\*\*(?!\*)$/,
+        marks: ["bold"],
+        len: 2,
+      },
+      {
+        reg: /(?<!\_)\_\_(?!\_)(.+?)(?<!\_)\_\_(?!\_)$/,
+        marks: ["bold"],
+        len: 2,
+      },
+      {
+        reg: /(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)$/,
+        marks: ["italic"],
+        len: 1,
+      },
+      { reg: /(?<!_)_(?!\_)(.+?)(?<!_)_(?!\_)$/, marks: ["italic"], len: 1 },
+      { reg: /(?<!`)`(?![`])(.+?)(?<!`)`(?!`)$/, marks: ["code"], len: 1 },
     ];
 
     for (const pattern of patterns) {
       const match = lineText.match(pattern.reg);
       if (match) {
         const matchedText = match[1];
-        const totalLen = (pattern.len * 2) + matchedText.length;
-        
+        const totalLen = pattern.len * 2 + matchedText.length;
+
         Editor.withoutNormalizing(editor, () => {
           // 1. Calculate the match range
-          const matchStart = Editor.before(editor, anchor, { distance: totalLen - 1, unit: 'character' }) || lineRange.anchor;
+          const matchStart =
+            Editor.before(editor, anchor, {
+              distance: totalLen - 1,
+              unit: "character",
+            }) || lineRange.anchor;
           const matchRange = { anchor: matchStart, focus: anchor };
 
           // 2. Calculate content range (inside markers)
-          const contentStart = Editor.after(editor, matchStart, { distance: pattern.len, unit: 'character' }) || matchStart;
+          const contentStart =
+            Editor.after(editor, matchStart, {
+              distance: pattern.len,
+              unit: "character",
+            }) || matchStart;
           // The suffix hasn't been typed yet, but it's in lineText? No, lineText includes the latest char.
           // But the editor DOES NOT yet have the latest char.
           // So the suffix in the editor is pattern.len - 1 characters long.
-          const contentEnd = Editor.before(editor, anchor, { distance: pattern.len - 1, unit: 'character' }) || anchor;
-          
+          const contentEnd =
+            Editor.before(editor, anchor, {
+              distance: pattern.len - 1,
+              unit: "character",
+            }) || anchor;
+
           const contentRange = { anchor: contentStart, focus: contentEnd };
 
           // 3. Extract rich content and apply marks
@@ -170,9 +250,9 @@ const withShortcuts = (editor: Editor) => {
           Transforms.select(editor, matchRange);
           Transforms.delete(editor);
           Transforms.insertNodes(editor, newNodes);
-          
+
           // Collapse selection to end
-          Transforms.collapse(editor, { edge: 'end' });
+          Transforms.collapse(editor, { edge: "end" });
         });
         return;
       }
@@ -190,27 +270,43 @@ const Element = (props: RenderElementProps) => {
   const editor = useSlateStatic();
 
   switch ((element as any).type) {
-    case 'block-quote':
+    case "block-quote":
       return (
-        <blockquote style={style} {...attributes} className="border-l-4 border-slate-200 pl-4 italic my-4 dark:border-slate-700">
+        <blockquote
+          style={style}
+          {...attributes}
+          className="border-l-4 border-slate-200 pl-4 italic my-4 dark:border-slate-700"
+        >
           {children}
         </blockquote>
       );
-    case 'bulleted-list':
+    case "bulleted-list":
       return (
-        <ul style={style} {...attributes} className="list-disc list-inside my-4 text-slate-700 dark:text-slate-300">
+        <ul
+          style={style}
+          {...attributes}
+          className="list-disc list-inside my-4 text-slate-700 dark:text-slate-300"
+        >
           {children}
         </ul>
       );
-    case 'list-item':
-      return <li style={style} {...attributes}>{children}</li>;
-    case 'numbered-list':
+    case "list-item":
       return (
-        <ol style={style} {...attributes} className="list-decimal list-inside my-4">
+        <li style={style} {...attributes}>
+          {children}
+        </li>
+      );
+    case "numbered-list":
+      return (
+        <ol
+          style={style}
+          {...attributes}
+          className="list-decimal list-inside my-4"
+        >
           {children}
         </ol>
       );
-    case 'check-list-item':
+    case "check-list-item":
       const checked = (element as any).checked;
       return (
         <div {...attributes} className="flex flex-row items-center my-1">
@@ -218,63 +314,103 @@ const Element = (props: RenderElementProps) => {
             <input
               type="checkbox"
               checked={checked}
-              onChange={event => {
+              onChange={(event) => {
                 const path = ReactEditor.findPath(editor, element);
-                const newProperties: Partial<SlateElement> = { checked: event.target.checked };
-                Transforms.setNodes<SlateElement>(editor, newProperties, { at: path });
+                const newProperties: Partial<SlateElement> = {
+                  checked: event.target.checked,
+                };
+                Transforms.setNodes<SlateElement>(editor, newProperties, {
+                  at: path,
+                });
               }}
               className="h-4 w-4 rounded border-slate-300 text-google-blue focus:ring-google-blue cursor-pointer"
             />
           </span>
-          <span style={{ textDecoration: checked ? 'line-through' : 'none' }} className={`flex-1 ${checked ? 'opacity-50 italic' : ''}`}>
+          <span
+            style={{ textDecoration: checked ? "line-through" : "none" }}
+            className={`flex-1 ${checked ? "opacity-50 italic" : ""}`}
+          >
             {children}
           </span>
         </div>
       );
     default:
-      return <p style={style} {...attributes} className="my-2">{children}</p>;
+      return (
+        <p style={style} {...attributes} className="my-2">
+          {children}
+        </p>
+      );
   }
 };
 
 const Leaf = ({ attributes, children, leaf }: any) => {
   let content = children;
-  
+
   if (leaf.bold) content = <span className="font-bold">{content}</span>;
   if (leaf.italic) content = <em className="italic">{content}</em>;
-  if (leaf.code) content = <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono text-sm">{content}</code>;
+  if (leaf.code)
+    content = (
+      <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono text-sm">
+        {content}
+      </code>
+    );
   if (leaf.underline) content = <u className="underline">{content}</u>;
-  if (leaf.strikethrough) content = <s className="text-slate-500 line-through">{content}</s>;
+  if (leaf.strikethrough)
+    content = <s className="text-slate-500 line-through">{content}</s>;
 
-  const grammarClass = leaf.grammarError 
-    ? "bg-pink-100/50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 shadow-[inset_0_-2px_0_0_#F472B6] dark:shadow-[inset_0_-2px_0_0_#EC4899] cursor-pointer transition-colors hover:bg-pink-200/50 dark:hover:bg-pink-800/50" 
+  const grammarClass = leaf.grammarError
+    ? "bg-pink-100/50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 shadow-[inset_0_-2px_0_0_#F472B6] dark:shadow-[inset_0_-2px_0_0_#EC4899] cursor-pointer transition-colors hover:bg-pink-200/50 dark:hover:bg-pink-800/50"
     : "";
 
   return (
-    <span 
-      {...attributes} 
+    <span
+      {...attributes}
       className={grammarClass}
-      onMouseEnter={leaf.grammarError ? (e) => {
-        e.stopPropagation();
-        const event = new CustomEvent('openGrammarMatch', {
-          detail: { match: leaf.matchData, rect: e.currentTarget.getBoundingClientRect() }
-        });
-        window.dispatchEvent(event);
-      } : undefined}
+      onMouseEnter={
+        leaf.grammarError
+          ? (e) => {
+              e.stopPropagation();
+              const event = new CustomEvent("openGrammarMatch", {
+                detail: {
+                  match: leaf.matchData,
+                  rect: e.currentTarget.getBoundingClientRect(),
+                },
+              });
+              window.dispatchEvent(event);
+            }
+          : undefined
+      }
     >
       {content}
     </span>
   );
 };
 
-function ToolbarButton({ icon, title, onClick, active, onPointerDown, className = "", variant = 'default', forceShow = false }: any) {
+function ToolbarButton({
+  icon,
+  title,
+  onClick,
+  active,
+  onPointerDown,
+  className = "",
+  variant = "default",
+  forceShow = false,
+}: any) {
   return (
-    <Tooltip title={title || ''} position="bottom" variant={variant} forceShow={forceShow}>
-      <button 
+    <Tooltip
+      title={title || ""}
+      position="bottom"
+      variant={variant}
+      forceShow={forceShow}
+    >
+      <button
         onClick={onClick}
         onPointerDown={onPointerDown}
         className={`flex h-[34px] w-[34px] items-center justify-center rounded-[10px] transition-all duration-200 ${
-          active ? 'text-[#4285F4] dark:text-[#4285F4]' : 'text-slate-600 dark:text-slate-400'
-        } ${className}`} 
+          active
+            ? "text-[#4285F4] dark:text-[#4285F4]"
+            : "text-slate-600 dark:text-slate-400"
+        } ${className}`}
       >
         {icon}
       </button>
@@ -301,7 +437,11 @@ const BlockButton = ({ format, icon, title }: any) => {
   const editor = useSlate();
   return (
     <ToolbarButton
-      active={isBlockActive(editor, format, TEXT_ALIGN_TYPES.includes(format) ? 'align' : 'type')}
+      active={isBlockActive(
+        editor,
+        format,
+        TEXT_ALIGN_TYPES.includes(format) ? "align" : "type",
+      )}
       icon={icon}
       title={title}
       onPointerDown={(event: any) => {
@@ -317,7 +457,7 @@ interface SlateEditorProps {
   onChange: (val: Descendant[]) => void;
   fontSize: number;
   activeFileId: string;
-  showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  showToast: (msg: string, type?: "success" | "error" | "info") => void;
   formattingSettings: FormattingSettings;
   onSettingsChange: (settings: FormattingSettings) => void;
   onDownload?: () => void;
@@ -335,11 +475,20 @@ export function SlateEditor({
   onSettingsChange,
   onDownload,
   onShare,
-  onAction
+  onAction,
 }: SlateEditorProps) {
-  const renderElement = useCallback((props: RenderElementProps) => <Element {...props} />, []);
-  const renderLeaf = useCallback((props: RenderLeafProps) => <Leaf {...props} />, []);
-  const editor = useMemo(() => withShortcuts(withHistory(withReact(createEditor()))), []);
+  const renderElement = useCallback(
+    (props: RenderElementProps) => <Element {...props} />,
+    [],
+  );
+  const renderLeaf = useCallback(
+    (props: RenderLeafProps) => <Leaf {...props} />,
+    [],
+  );
+  const editor = useMemo(
+    () => withShortcuts(withHistory(withReact(createEditor()))),
+    [],
+  );
   const [isCorrecting, setIsCorrecting] = useState(false);
   const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isCheckingRef = useRef(false);
@@ -353,67 +502,94 @@ export function SlateEditor({
     shortMessage: string;
   }
   const [grammarMatches, setGrammarMatches] = useState<GrammarMatch[]>([]);
-  const [activeGrammarMatch, setActiveGrammarMatch] = useState<{ match: GrammarMatch, rect: DOMRect } | null>(null);
+  const [activeGrammarMatch, setActiveGrammarMatch] = useState<{
+    match: GrammarMatch;
+    rect: DOMRect;
+  } | null>(null);
 
   useEffect(() => {
     const handleOpenGrammarMatch = (e: any) => {
       setActiveGrammarMatch(e.detail);
     };
-    window.addEventListener('openGrammarMatch', handleOpenGrammarMatch);
+    window.addEventListener("openGrammarMatch", handleOpenGrammarMatch);
 
     const handleClose = () => setActiveGrammarMatch(null);
-    window.addEventListener('resize', handleClose);
-    window.addEventListener('scroll', handleClose);
-    document.addEventListener('click', handleClose);
+    window.addEventListener("resize", handleClose);
+    window.addEventListener("scroll", handleClose);
+    document.addEventListener("click", handleClose);
 
     return () => {
-      window.removeEventListener('openGrammarMatch', handleOpenGrammarMatch);
-      window.removeEventListener('resize', handleClose);
-      window.removeEventListener('scroll', handleClose);
-      document.removeEventListener('click', handleClose);
+      window.removeEventListener("openGrammarMatch", handleOpenGrammarMatch);
+      window.removeEventListener("resize", handleClose);
+      window.removeEventListener("scroll", handleClose);
+      document.removeEventListener("click", handleClose);
     };
   }, []);
 
   useEffect(() => {
     return () => {
-      grammarMatches.forEach(m => m.rangeRef.unref());
+      grammarMatches.forEach((m) => m.rangeRef.unref());
     };
   }, [grammarMatches]);
 
-  const decorate = useCallback(([node, path]: [Node, Path]) => {
-    const ranges: any[] = [];
-    if (!Text.isText(node)) return ranges;
-    if (grammarMatches.length === 0) return ranges;
+  const decorate = useCallback(
+    ([node, path]: [Node, Path]) => {
+      const ranges: any[] = [];
+      if (!Text.isText(node)) return ranges;
+      if (grammarMatches.length === 0) return ranges;
 
-    for (const match of grammarMatches) {
-      const currentRange = match.rangeRef.current;
-      if (currentRange && Range.includes(currentRange, path)) {
-        const intersection = Range.intersection(currentRange, {
-          anchor: { path, offset: 0 },
-          focus: { path, offset: node.text.length }
-        });
-        if (intersection) {
-          ranges.push({ ...intersection, grammarError: true, matchData: match });
+      for (const match of grammarMatches) {
+        const currentRange = match.rangeRef.current;
+        if (currentRange && Range.includes(currentRange, path)) {
+          const intersection = Range.intersection(currentRange, {
+            anchor: { path, offset: 0 },
+            focus: { path, offset: node.text.length },
+          });
+          if (intersection) {
+            ranges.push({
+              ...intersection,
+              grammarError: true,
+              matchData: match,
+            });
+          }
         }
       }
-    }
-    return ranges;
-  }, [grammarMatches]);
+      return ranges;
+    },
+    [grammarMatches],
+  );
 
   const applyGrammarFix = (match: GrammarMatch, replacement: string) => {
     const currentRange = match.rangeRef.current;
     if (!currentRange) return;
-    Transforms.select(editor, currentRange);
-    Transforms.insertText(editor, replacement);
+
+    // Track original selection through the transformation
+    const selRef = editor.selection
+      ? Editor.rangeRef(editor, editor.selection)
+      : null;
+
+    // Focus first to ensure Slate is ready and selection is restored if needed
+    ReactEditor.focus(editor);
+
+    // Use 'at' to avoid changing selection (though Slate may still move it)
+    Transforms.insertText(editor, replacement, { at: currentRange });
+
+    // Restore original selection (adjusted for text changes by the RangeRef)
+    if (selRef) {
+      if (selRef.current) {
+        Transforms.select(editor, selRef.current);
+      }
+      selRef.unref();
+    }
 
     match.rangeRef.unref();
-    setGrammarMatches(prev => prev.filter(m => m.id !== match.id));
+    setGrammarMatches((prev) => prev.filter((m) => m.id !== match.id));
     setActiveGrammarMatch(null);
   };
 
   const dismissGrammarMatch = (match: GrammarMatch) => {
     match.rangeRef.unref();
-    setGrammarMatches(prev => prev.filter(m => m.id !== match.id));
+    setGrammarMatches((prev) => prev.filter((m) => m.id !== match.id));
     setActiveGrammarMatch(null);
   };
 
@@ -422,14 +598,14 @@ export function SlateEditor({
 
   const handleAIRephrase = async () => {
     if (editor.children.length === 0 || isRephrasing) return;
-    
+
     setIsRephrasing(true);
     showToast("Gemini is refining your text...", "info");
 
     try {
       const rawMarkdown = serializeMarkdown(editor.children);
       const formattedMarkdown = formatMarkdown(rawMarkdown, formattingSettings);
-      
+
       const rephrased = await rephraseWithGemini(formattedMarkdown);
       const newNodes = deserializeMarkdown(rephrased);
 
@@ -444,15 +620,18 @@ export function SlateEditor({
       });
       Transforms.insertNodes(editor, newNodes, { at: [0] });
       Transforms.select(editor, Editor.start(editor, [])); // Set selection to start of new content
-      
-      grammarMatches.forEach(m => m.rangeRef.unref());
+
+      grammarMatches.forEach((m) => m.rangeRef.unref());
       setGrammarMatches([]);
       setActiveGrammarMatch(null);
-      
+
       showToast("Text perfected by Gemini!", "success");
     } catch (error) {
-       console.error("Gemini AI failed:", error);
-       showToast("Gemini is currently unavailable. Try again in a moment.", "error");
+      console.error("Gemini AI failed:", error);
+      showToast(
+        "Gemini is currently unavailable. Try again in a moment.",
+        "error",
+      );
     } finally {
       setIsRephrasing(false);
     }
@@ -464,10 +643,11 @@ export function SlateEditor({
     if (!silent) setIsCorrecting(true);
 
     const blocksToProcess: { path: Path; text: string; node: Node }[] = [];
-    
+
     // Synchronously collect blocks
     for (const [blockNode, blockPath] of Editor.nodes(editor, {
-      match: n => SlateElement.isElement(n) && Editor.isBlock(editor, n as SlateElement)
+      match: (n) =>
+        SlateElement.isElement(n) && Editor.isBlock(editor, n as SlateElement),
     })) {
       const text = Node.string(blockNode);
       if (text.trim()) {
@@ -482,7 +662,7 @@ export function SlateEditor({
         blocksToProcess.map(async (b) => {
           const matches = await checkGrammarMatches(b.text);
           return { ...b, matches };
-        })
+        }),
       );
 
       const newMatches: GrammarMatch[] = [];
@@ -495,43 +675,58 @@ export function SlateEditor({
         if (Node.string(currentBlock) !== res.text) continue;
 
         for (const m of res.matches) {
-           let currentOffset = 0;
-           let anchorPoint: Point | null = null;
-           let focusPoint: Point | null = null;
+          let currentOffset = 0;
+          let anchorPoint: Point | null = null;
+          let focusPoint: Point | null = null;
 
-           for (const [textNode, textPath] of Editor.nodes(editor, { at: res.path, match: Text.isText })) {
-             const nodeLength = (textNode as any).text.length;
+          for (const [textNode, textPath] of Editor.nodes(editor, {
+            at: res.path,
+            match: Text.isText,
+          })) {
+            const nodeLength = (textNode as any).text.length;
 
-             if (!anchorPoint && m.offset < currentOffset + nodeLength) {
-               anchorPoint = { path: textPath, offset: m.offset - currentOffset };
-             }
-             if (anchorPoint && !focusPoint && m.offset + m.length <= currentOffset + nodeLength) {
-               focusPoint = { path: textPath, offset: m.offset + m.length - currentOffset };
-               break;
-             }
-             currentOffset += nodeLength;
-           }
+            if (!anchorPoint && m.offset < currentOffset + nodeLength) {
+              anchorPoint = {
+                path: textPath,
+                offset: m.offset - currentOffset,
+              };
+            }
+            if (
+              anchorPoint &&
+              !focusPoint &&
+              m.offset + m.length <= currentOffset + nodeLength
+            ) {
+              focusPoint = {
+                path: textPath,
+                offset: m.offset + m.length - currentOffset,
+              };
+              break;
+            }
+            currentOffset += nodeLength;
+          }
 
-           if (anchorPoint && focusPoint && m.replacements.length > 0) {
-              const matchRange = { anchor: anchorPoint, focus: focusPoint };
-              try {
-                const rangeRef = Editor.rangeRef(editor, matchRange, { affinity: 'forward' });
-                newMatches.push({
-                  id: Math.random().toString(36).substring(7),
-                  rangeRef,
-                  replacements: m.replacements.map(r => r.value),
-                  message: m.message,
-                  shortMessage: m.shortMessage
-                });
-              } catch (e) {
-                console.warn("Skipping invalid range ref creation");
-              }
-           }
+          if (anchorPoint && focusPoint && m.replacements.length > 0) {
+            const matchRange = { anchor: anchorPoint, focus: focusPoint };
+            try {
+              const rangeRef = Editor.rangeRef(editor, matchRange, {
+                affinity: "forward",
+              });
+              newMatches.push({
+                id: Math.random().toString(36).substring(7),
+                rangeRef,
+                replacements: m.replacements.map((r) => r.value),
+                message: m.message,
+                shortMessage: m.shortMessage,
+              });
+            } catch (e) {
+              console.warn("Skipping invalid range ref creation");
+            }
+          }
         }
       }
 
       // Cleanup old matches only AFTER successfully plotting new ones to prevent flicker
-      grammarMatches.forEach(m => m.rangeRef.unref());
+      grammarMatches.forEach((m) => m.rangeRef.unref());
       setGrammarMatches(newMatches);
 
       if (!silent) {
@@ -557,38 +752,68 @@ export function SlateEditor({
       return;
     }
 
+    // Sort in reverse order to avoid path shifts
     const sorted = [...grammarMatches].sort((a, b) => {
       const aRange = a.rangeRef.current;
       const bRange = b.rangeRef.current;
       if (!aRange || !bRange) return 0;
-      return Path.compare(bRange.anchor.path, aRange.anchor.path) || bRange.anchor.offset - aRange.anchor.offset;
+      return (
+        Path.compare(bRange.anchor.path, aRange.anchor.path) ||
+        bRange.focus.offset - aRange.focus.offset
+      );
     });
 
-    let fixedCount = 0;
-    for (const match of sorted) {
-      const currentRange = match.rangeRef.current;
-      if (!currentRange || match.replacements.length === 0) continue;
-      Transforms.select(editor, currentRange);
-      Transforms.insertText(editor, match.replacements[0]);
-      match.rangeRef.unref();
-      fixedCount++;
-    }
+    // Track original selection through multiple transformations
+    const selRef = editor.selection
+      ? Editor.rangeRef(editor, editor.selection)
+      : null;
 
-    setGrammarMatches([]);
-    setActiveGrammarMatch(null);
-    showToast(`Fixed ${fixedCount} grammar issues!`, "success");
+    // Focus the editor before making changes
+    ReactEditor.focus(editor);
+
+    Editor.withoutNormalizing(editor, () => {
+      let fixedCount = 0;
+      for (const match of sorted) {
+        const currentRange = match.rangeRef.current;
+        if (!currentRange || match.replacements.length === 0) continue;
+
+        // Use 'at' to avoid changing selection (though Slate may still move it)
+        Transforms.insertText(editor, match.replacements[0], {
+          at: currentRange,
+        });
+        match.rangeRef.unref();
+        fixedCount++;
+      }
+
+      // Restore original selection (adjusted for all text changes by the RangeRef)
+      if (selRef) {
+        if (selRef.current) {
+          Transforms.select(editor, selRef.current);
+        }
+        selRef.unref();
+      }
+
+      setGrammarMatches([]);
+      setActiveGrammarMatch(null);
+      showToast(`Fixed ${fixedCount} grammar issues!`, "success");
+    });
   };
 
   const [value, setValue] = useState<Descendant[]>(() => {
-    if (typeof initialContent === 'string') {
-      if (initialContent.trim().startsWith('[{') || initialContent.trim().startsWith('{"')) {
+    if (typeof initialContent === "string") {
+      if (
+        initialContent.trim().startsWith("[{") ||
+        initialContent.trim().startsWith('{"')
+      ) {
         try {
           return JSON.parse(initialContent);
         } catch {
           // Fall back to markdown if invalid
         }
       }
-      return initialContent ? deserializeMarkdown(initialContent) : getInitialSlateValue();
+      return initialContent
+        ? deserializeMarkdown(initialContent)
+        : getInitialSlateValue();
     }
     return initialContent || getInitialSlateValue();
   });
@@ -600,20 +825,27 @@ export function SlateEditor({
     lastFileIdRef.current = activeFileId;
 
     let newValue: Descendant[];
-    if (typeof initialContent === 'string') {
-      if (initialContent.trim().startsWith('[{') || initialContent.trim().startsWith('{"')) {
+    if (typeof initialContent === "string") {
+      if (
+        initialContent.trim().startsWith("[{") ||
+        initialContent.trim().startsWith('{"')
+      ) {
         try {
           newValue = JSON.parse(initialContent);
         } catch {
-          newValue = initialContent ? deserializeMarkdown(initialContent) : getInitialSlateValue();
+          newValue = initialContent
+            ? deserializeMarkdown(initialContent)
+            : getInitialSlateValue();
         }
       } else {
-        newValue = initialContent ? deserializeMarkdown(initialContent) : getInitialSlateValue();
+        newValue = initialContent
+          ? deserializeMarkdown(initialContent)
+          : getInitialSlateValue();
       }
     } else {
       newValue = initialContent || getInitialSlateValue();
     }
-    
+
     // Safety check: Ensure we don't end up with empty children which Slate hates
     if (!newValue || newValue.length === 0) {
       newValue = getInitialSlateValue();
@@ -629,26 +861,37 @@ export function SlateEditor({
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     const { selection } = editor;
-    
-    if (event.key === 'Backspace' && selection && Range.isCollapsed(selection)) {
+
+    if (
+      event.key === "Backspace" &&
+      selection &&
+      Range.isCollapsed(selection)
+    ) {
       const entry = Editor.above(editor, {
-        match: n => !Editor.isEditor(n) && SlateElement.isElement(n) && Editor.isBlock(editor, n)
+        match: (n) =>
+          !Editor.isEditor(n) &&
+          SlateElement.isElement(n) &&
+          Editor.isBlock(editor, n),
       });
 
       if (entry) {
         const [node, path] = entry;
         const isAtStart = Editor.isStart(editor, selection.anchor, path);
-        
+
         if (isAtStart) {
           const type = (node as any).type;
-          if (type === 'list-item') {
+          if (type === "list-item") {
             const parent = Editor.parent(editor, path);
-            if (parent && SlateElement.isElement(parent[0]) && LIST_TYPES.includes((parent[0] as any).type)) {
+            if (
+              parent &&
+              SlateElement.isElement(parent[0]) &&
+              LIST_TYPES.includes((parent[0] as any).type)
+            ) {
               event.preventDefault();
               toggleBlock(editor, (parent[0] as any).type);
               return;
             }
-          } else if (type === 'check-list-item') {
+          } else if (type === "check-list-item") {
             event.preventDefault();
             toggleBlock(editor, type);
             return;
@@ -667,12 +910,17 @@ export function SlateEditor({
   };
 
   return (
-    <div id="tour-editor" className="flex flex-1 flex-col overflow-hidden w-full">
+    <div
+      id="tour-editor"
+      className="flex flex-1 flex-col overflow-hidden w-full"
+    >
       <Slate
         editor={editor}
         initialValue={value}
-        onChange={val => {
-          const isAstChange = editor.operations.some(op => op.type !== 'set_selection');
+        onChange={(val) => {
+          const isAstChange = editor.operations.some(
+            (op) => op.type !== "set_selection",
+          );
 
           if (isAstChange) {
             if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
@@ -680,13 +928,13 @@ export function SlateEditor({
             checkTimerRef.current = setTimeout(() => {
               runGrammarCheck(true);
             }, 2000);
-            
+
             // Trigger tour action on first input
             console.log("Tour: Editor input detected, calling onAction");
             if (onAction) onAction(2);
           }
           setValue(val);
-          
+
           // Only propagate up to FileContext if the user actually made AST content changes
           if (isAstChange) {
             onChange(val);
@@ -696,62 +944,112 @@ export function SlateEditor({
         {/* Toolbar - fixed, never scrolls */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-1 md:px-[20px] py-1.5 md:py-2 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm overflow-x-auto no-scrollbar">
           <div className="flex items-center gap-0.5 md:gap-1 min-w-max">
-            <MarkButton format="bold" icon={<Bold size={16} />} title="Bold (Ctrl+B)" />
-            <MarkButton format="italic" icon={<Italic size={16} />} title="Italic (Ctrl+I)" />
-            <MarkButton format="underline" icon={<Underline size={16} />} title="Underline (Ctrl+U)" />
-            <MarkButton format="strikethrough" icon={<Strikethrough size={16} />} title="Strikethrough (Ctrl+Shift+X)" />
+            <MarkButton
+              format="bold"
+              icon={<Bold size={16} />}
+              title="Bold (Ctrl+B)"
+            />
+            <MarkButton
+              format="italic"
+              icon={<Italic size={16} />}
+              title="Italic (Ctrl+I)"
+            />
+            <MarkButton
+              format="underline"
+              icon={<Underline size={16} />}
+              title="Underline (Ctrl+U)"
+            />
+            <MarkButton
+              format="strikethrough"
+              icon={<Strikethrough size={16} />}
+              title="Strikethrough (Ctrl+Shift+X)"
+            />
             <div className="mx-1 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
-            <BlockButton format="bulleted-list" icon={<List size={16} />} title="Bulleted List" />
-            <BlockButton format="numbered-list" icon={<ListOrdered size={16} />} title="Numbered List" />
-            <BlockButton format="check-list-item" icon={<ListTodo size={16} />} title="Check List" />
-            
+            <BlockButton
+              format="bulleted-list"
+              icon={<List size={16} />}
+              title="Bulleted List"
+            />
+            <BlockButton
+              format="numbered-list"
+              icon={<ListOrdered size={16} />}
+              title="Numbered List"
+            />
+            <BlockButton
+              format="check-list-item"
+              icon={<ListTodo size={16} />}
+              title="Check List"
+            />
+
             <div className="mx-1 h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
-            
+
             <div className="flex items-center gap-[6px] ml-1">
               <div className="group relative z-[60]">
-                <ToolbarButton 
+                <ToolbarButton
                   active={false}
-                  variant={grammarMatches.length > 0 ? 'error' : 'default'}
+                  variant={grammarMatches.length > 0 ? "error" : "default"}
                   forceShow={grammarMatches.length > 0}
                   icon={
                     <div className="relative">
                       {isCorrecting ? (
-                        <Loader2 size={18} strokeWidth={2.5} className="animate-spin text-white" />
+                        <Loader2
+                          size={18}
+                          strokeWidth={2.5}
+                          className="animate-spin text-white"
+                        />
                       ) : (
                         <>
-                          <Wand2 
-                            size={18} 
-                            strokeWidth={2.5} 
-                            className={grammarMatches.length > 0 ? 'text-white' : 'text-slate-500 dark:text-slate-400 group-hover:text-[#FF3B30] transition-colors duration-200'} 
+                          <Wand2
+                            size={18}
+                            strokeWidth={2.5}
+                            className={
+                              grammarMatches.length > 0
+                                ? "text-white"
+                                : "text-slate-500 dark:text-slate-400 group-hover:text-[#FF3B30] transition-colors duration-200"
+                            }
                           />
                         </>
                       )}
                     </div>
-                  } 
-                  title={grammarMatches.length === 0 ? "Fix Grammar" : `Fix ${grammarMatches.length} grammar issue${grammarMatches.length > 1 ? 's' : ''}`} 
-                  onClick={handleFixAllGrammar} 
-                  className={`!rounded-[10px] !h-[34px] !w-[34px] bg-transparent ${grammarMatches.length > 0 ? '!bg-[#FF3B30] !text-white shadow-sm ring-1 ring-[#FF3B30]/30' : ''}`}
+                  }
+                  title={
+                    grammarMatches.length === 0
+                      ? "Fix Grammar"
+                      : `Fix ${grammarMatches.length} grammar issue${grammarMatches.length > 1 ? "s" : ""}`
+                  }
+                  onClick={handleFixAllGrammar}
+                  className={`!rounded-[10px] !h-[34px] !w-[34px] bg-transparent ${grammarMatches.length > 0 ? "!bg-[#FF3B30] !text-white shadow-sm ring-1 ring-[#FF3B30]/30" : ""}`}
                 />
               </div>
 
               <div className="group relative z-[60]">
-                <ToolbarButton 
+                <ToolbarButton
                   active={false}
-                  icon={<Sparkles size={18} strokeWidth={2.5} className={isRephrasing ? 'animate-spin text-[#A855F7]' : 'animate-gemini text-[#A855F7]'} />} 
-                  title="Refine with Gemini" 
-                  onClick={handleAIRephrase} 
-                  className={`!rounded-[10px] !h-[34px] !w-[34px] bg-transparent ${isRephrasing ? 'ring-[1px] ring-[#A855F7]/30 shadow-sm' : ''}`}
+                  icon={
+                    <Sparkles
+                      size={18}
+                      strokeWidth={2.5}
+                      className={
+                        isRephrasing
+                          ? "animate-spin text-[#A855F7]"
+                          : "animate-gemini text-[#A855F7]"
+                      }
+                    />
+                  }
+                  title="Refine with Gemini"
+                  onClick={handleAIRephrase}
+                  className={`!rounded-[10px] !h-[34px] !w-[34px] bg-transparent ${isRephrasing ? "ring-[1px] ring-[#A855F7]/30 shadow-sm" : ""}`}
                 />
               </div>
             </div>
           </div>
           <div className="hidden md:flex items-center gap-1 md:gap-2">
             {onShare && (
-              <ToolbarButton 
+              <ToolbarButton
                 id="tour-share-btn"
                 active={false}
-                icon={<Share2 size={16} className="text-slate-500" />} 
-                title="Share Link" 
+                icon={<Share2 size={16} className="text-slate-500" />}
+                title="Share Link"
                 onClick={() => {
                   if (onShare) onShare();
                   if (onAction) onAction(3);
@@ -759,11 +1057,11 @@ export function SlateEditor({
               />
             )}
             {onDownload && (
-              <ToolbarButton 
+              <ToolbarButton
                 id="tour-download-btn"
                 active={false}
-                icon={<Download size={16} className="text-slate-500" />} 
-                title="Download Note" 
+                icon={<Download size={16} className="text-slate-500" />}
+                title="Download Note"
                 onClick={() => {
                   if (onDownload) onDownload();
                   if (onAction) onAction(4);
@@ -779,7 +1077,7 @@ export function SlateEditor({
             <div className="absolute top-2 right-2 md:top-5 md:right-5 z-20 flex md:hidden flex-row items-center gap-2">
               {onShare && (
                 <Tooltip title="Share Link" position="bottom">
-                  <button 
+                  <button
                     id="tour-share-btn"
                     onClick={() => {
                       if (onShare) onShare();
@@ -793,7 +1091,7 @@ export function SlateEditor({
               )}
               {onDownload && (
                 <Tooltip title="Download Note" position="bottom">
-                  <button 
+                  <button
                     onClick={() => {
                       if (onDownload) onDownload();
                       if (onAction) onAction(4);
@@ -815,16 +1113,17 @@ export function SlateEditor({
             autoFocus
             onKeyDown={onKeyDown}
             onPaste={(event) => {
-              const text = event.clipboardData.getData('text/plain');
-              
+              const text = event.clipboardData.getData("text/plain");
+
               // If it looks like markdown (contains markers), handle it
               // Simplified check: if it contains **, *, #, - [, etc.
-              const isMarkdown = /[\*#_~`]/.test(text) || /^([*-]\s|\d+\.\s|>\s)/m.test(text);
+              const isMarkdown =
+                /[\*#_~`]/.test(text) || /^([*-]\s|\d+\.\s|>\s)/m.test(text);
 
               if (isMarkdown) {
                 event.preventDefault();
                 const nodes = deserializeMarkdown(text);
-                
+
                 // If we have multiple lines/blocks, insert them as a fragment
                 // If it's a single block, Slate handles it naturally with insertFragment
                 Transforms.insertFragment(editor, nodes);
@@ -841,7 +1140,7 @@ export function SlateEditor({
             className="fixed z-[9999] bg-white dark:bg-slate-800 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-200 dark:border-slate-700 p-4 w-72 text-sm font-sans"
             style={{
               top: activeGrammarMatch.rect.bottom + 8,
-              left: Math.max(10, activeGrammarMatch.rect.left - 50)
+              left: Math.max(10, activeGrammarMatch.rect.left - 50),
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -849,11 +1148,13 @@ export function SlateEditor({
               {activeGrammarMatch.match.shortMessage || "Replace the word"}
             </div>
 
-            {(activeGrammarMatch.match.message && activeGrammarMatch.match.message !== activeGrammarMatch.match.shortMessage) && (
-              <div className="bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 rounded-lg p-2.5 mb-3 text-xs leading-relaxed border border-orange-100 dark:border-orange-900/50">
-                {activeGrammarMatch.match.message}
-              </div>
-            )}
+            {activeGrammarMatch.match.message &&
+              activeGrammarMatch.match.message !==
+                activeGrammarMatch.match.shortMessage && (
+                <div className="bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 rounded-lg p-2.5 mb-3 text-xs leading-relaxed border border-orange-100 dark:border-orange-900/50">
+                  {activeGrammarMatch.match.message}
+                </div>
+              )}
 
             <div className="space-y-1 mt-2">
               {activeGrammarMatch.match.replacements.slice(0, 3).map((r, i) => (
