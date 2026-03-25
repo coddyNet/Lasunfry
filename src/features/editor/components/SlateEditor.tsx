@@ -2,6 +2,7 @@ import React, {
   useMemo,
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useCallback,
 } from "react";
@@ -359,7 +360,7 @@ const Leaf = ({ attributes, children, leaf }: any) => {
     content = <s className="text-slate-500 line-through">{content}</s>;
 
   const grammarClass = leaf.grammarError
-    ? "bg-pink-100/50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 shadow-[inset_0_-2px_0_0_#F472B6] dark:shadow-[inset_0_-2px_0_0_#EC4899] cursor-pointer transition-colors hover:bg-pink-200/50 dark:hover:bg-pink-800/50"
+    ? "bg-pink-100/50 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 shadow-[inset_0_-2px_0_0_#F472B6] dark:shadow-[inset_0_-2px_0_0_#EC4899] cursor-pointer hover:bg-pink-200/50 dark:hover:bg-pink-800/50"
     : "";
 
   return (
@@ -492,8 +493,11 @@ export function SlateEditor({
   const [isCorrecting, setIsCorrecting] = useState(false);
   const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isCheckingRef = useRef(false);
+  // Saves the Slate selection before a grammar-match state update triggers re-render.
+  const savedSelectionRef = useRef<import("slate").Range | null>(null);
+  // A rAF handle so we can cancel a pending restoration if needed.
+  const rafRestoreRef = useRef<number | null>(null);
 
-  // Custom Inline Grammar State
   interface GrammarMatch {
     id: string;
     rangeRef: RangeRef;
@@ -531,6 +535,34 @@ export function SlateEditor({
       grammarMatches.forEach((m) => m.rangeRef.unref());
     };
   }, [grammarMatches]);
+
+  // After each grammar-matches update, Slate-React's own useEffect restores
+  // editor.selection to the DOM. We schedule our restore via requestAnimationFrame,
+  // which runs AFTER all pending useEffect hooks of the same render commit,
+  // ensuring we are always the last one to set the DOM selection.
+  useEffect(() => {
+    const saved = savedSelectionRef.current;
+    if (!saved) return;
+    savedSelectionRef.current = null;
+
+    if (rafRestoreRef.current !== null) {
+      cancelAnimationFrame(rafRestoreRef.current);
+    }
+    rafRestoreRef.current = requestAnimationFrame(() => {
+      rafRestoreRef.current = null;
+      if (!ReactEditor.isFocused(editor)) return;
+      try {
+        const domRange = ReactEditor.toDOMRange(editor, saved);
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(domRange);
+        }
+      } catch (_) {
+        // Range may have become invalid (e.g. user clicked away); ignore.
+      }
+    });
+  }, [grammarMatches, editor]);
 
   const decorate = useCallback(
     ([node, path]: [Node, Path]) => {
@@ -712,7 +744,7 @@ export function SlateEditor({
                 affinity: "forward",
               });
               newMatches.push({
-                id: Math.random().toString(36).substring(7),
+                id: `grammar-${res.path.join("-")}-${m.offset}-${m.length}`,
                 rangeRef,
                 replacements: m.replacements.map((r) => r.value),
                 message: m.message,
@@ -725,9 +757,29 @@ export function SlateEditor({
         }
       }
 
-      // Cleanup old matches only AFTER successfully plotting new ones to prevent flicker
-      grammarMatches.forEach((m) => m.rangeRef.unref());
-      setGrammarMatches(newMatches);
+      // Check if matches have actually changed to avoid redundant re-renders
+      const matchesChanged =
+        newMatches.length !== grammarMatches.length ||
+        newMatches.some((m, i) => {
+          const prev = grammarMatches[i];
+          if (!prev) return true;
+          const currRange = m.rangeRef.current;
+          const prevRange = prev.rangeRef.current;
+          if (!currRange || !prevRange) return true;
+          return (
+            !Range.equals(currRange, prevRange) ||
+            m.replacements[0] !== prev.replacements[0]
+          );
+        });
+
+      if (matchesChanged) {
+        // Save cursor position before re-render; rAF effect will restore it
+        savedSelectionRef.current = editor.selection
+          ? { ...editor.selection }
+          : null;
+        grammarMatches.forEach((m) => m.rangeRef.unref());
+        setGrammarMatches(newMatches);
+      }
 
       if (!silent) {
         if (newMatches.length > 0) {
@@ -924,7 +976,7 @@ export function SlateEditor({
 
           if (isAstChange) {
             if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
-            setActiveGrammarMatch(null);
+            if (activeGrammarMatch) setActiveGrammarMatch(null);
             checkTimerRef.current = setTimeout(() => {
               runGrammarCheck(true);
             }, 2000);
