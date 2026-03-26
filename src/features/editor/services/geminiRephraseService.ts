@@ -4,7 +4,7 @@
  * while preserving the original meaning and markdown formatting.
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
@@ -12,8 +12,10 @@ let genAI: GoogleGenerativeAI | null = null;
 
 function getGenAI(): GoogleGenerativeAI {
   if (!genAI) {
-    if (!API_KEY || API_KEY === 'your_gemini_api_key_here') {
-      throw new Error('Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your .env file.');
+    if (!API_KEY || API_KEY === "your_gemini_api_key_here") {
+      throw new Error(
+        "Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your .env file.",
+      );
     }
     genAI = new GoogleGenerativeAI(API_KEY);
   }
@@ -39,7 +41,7 @@ export async function rephraseWithGemini(text: string): Promise<string> {
 
   try {
     const ai = getGenAI();
-    const model = ai.getGenerativeModel({ model: 'gemini-flash-latest' });
+    const model = ai.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
     const result = await model.generateContent(REPHRASE_PROMPT + text);
     const response = result.response;
@@ -47,13 +49,15 @@ export async function rephraseWithGemini(text: string): Promise<string> {
 
     // Safety: if Gemini returns empty or something drastically different in length, fall back
     if (!rephrased || rephrased.length < text.length * 0.3) {
-      console.warn('Gemini rephrase returned suspicious result, falling back to original.');
+      console.warn(
+        "Gemini rephrase returned suspicious result, falling back to original.",
+      );
       return text;
     }
 
     return rephrased;
   } catch (error) {
-    console.error('Gemini rephrase failed:', error);
+    console.error("Gemini rephrase failed:", error);
     return text; // Graceful fallback: return original text unchanged
   }
 }
