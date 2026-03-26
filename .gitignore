@@ -6,7 +6,6 @@ coverage/
 *.log
 
 # Ignore all env files
-.env
 
 # But allow example env
 !.env.example
